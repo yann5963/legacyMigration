@@ -1,8 +1,9 @@
 package com.migration.model;
 
 public enum MigrationStatus {
-    PENDING,
-    IN_PROGRESS,
-    SUCCESS,
+    SCANNED,
+    CONVERTING,
+    NEEDS_REVIEW,
+    VALIDATED,
     ERROR
 }
