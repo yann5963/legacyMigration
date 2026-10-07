@@ -8,6 +8,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.FetchType;
+import jakarta.persistence.Column;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -31,6 +32,11 @@ public class MigrationFileStatus {
 
     private boolean isConverted;
     private boolean isValidated;
+
+    private Integer layer;
+
+    @Column(length = 2000)
+    private String lastCustomPrompt;
 
     private String sourceFile;
 
