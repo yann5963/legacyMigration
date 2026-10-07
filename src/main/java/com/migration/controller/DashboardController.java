@@ -4,6 +4,7 @@ import com.migration.dto.RetryRequest;
 import com.migration.model.MigrationFileStatus;
 import com.migration.repository.MigrationFileStatusRepository;
 import com.migration.service.AsyncMigrationRetryService;
+import com.migration.orchestrator.MigrationOrchestrator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -17,10 +18,17 @@ public class DashboardController {
 
     private final MigrationFileStatusRepository repository;
     private final AsyncMigrationRetryService retryService;
+    private final MigrationOrchestrator orchestrator;
 
     @GetMapping
     public List<MigrationFileStatus> getAllFiles() {
         return repository.findAll();
+    }
+
+    @PostMapping("/start")
+    public ResponseEntity<Void> startMigration() {
+        orchestrator.startMigration();
+        return ResponseEntity.accepted().build();
     }
 
     @PostMapping("/{id}/retry")

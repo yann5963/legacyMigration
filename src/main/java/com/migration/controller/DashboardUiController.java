@@ -10,4 +10,9 @@ public class DashboardUiController {
     public String dashboard() {
         return "dashboard"; // Renders dashboard.html
     }
+
+    @GetMapping("/configuration")
+    public String configuration() {
+        return "configuration"; // Renders configuration.html
+    }
 }

@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configuration de Migration</title>
+    <!-- Bootstrap CSS for styling -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="/dashboard">Migration Tool</a>
+        <div class="collapse navbar-collapse">
+            <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+                <li class="nav-item"><a class="nav-link" href="/dashboard">Dashboard</a></li>
+                <li class="nav-item"><a class="nav-link active" href="/configuration">Configuration</a></li>
+            </ul>
+        </div>
+    </div>
+</nav>
+
+<div class="container mt-5">
+    <h1 class="mb-4">Configuration Globale</h1>
+
+    <div class="card">
+        <div class="card-body">
+            <form id="configForm">
+                <div class="mb-3">
+                    <label for="targetJavaVersion" class="form-label">Version de Java cible</label>
+                    <select class="form-select" id="targetJavaVersion" required>
+                        <option value="17">17</option>
+                        <option value="19" selected>19</option>
+                        <option value="21">21</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label for="targetSpringBootVersion" class="form-label">Version de Spring Boot cible</label>
+                    <input type="text" class="form-control" id="targetSpringBootVersion" value="3.x" required>
+                </div>
+                <div class="mb-3">
+                    <label for="targetGroupId" class="form-label">Group ID cible (Optionnel)</label>
+                    <input type="text" class="form-control" id="targetGroupId" placeholder="com.migrated">
+                </div>
+                <div class="mb-3">
+                    <label for="targetArtifactId" class="form-label">Artifact ID cible (Optionnel)</label>
+                    <input type="text" class="form-control" id="targetArtifactId" placeholder="app-moderne">
+                </div>
+
+                <button type="button" class="btn btn-primary" onclick="saveConfig()">Sauvegarder la configuration</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        fetch('/api/configuration')
+            .then(response => response.json())
+            .then(data => {
+                if (data) {
+                    document.getElementById('targetJavaVersion').value = data.targetJavaVersion || "19";
+                    document.getElementById('targetSpringBootVersion').value = data.targetSpringBootVersion || "3.x";
+                    document.getElementById('targetGroupId').value = data.targetGroupId || "";
+                    document.getElementById('targetArtifactId').value = data.targetArtifactId || "";
+                }
+            })
+            .catch(error => console.error('Error fetching config:', error));
+    });
+
+    function saveConfig() {
+        const config = {
+            targetJavaVersion: document.getElementById('targetJavaVersion').value,
+            targetSpringBootVersion: document.getElementById('targetSpringBootVersion').value,
+            targetGroupId: document.getElementById('targetGroupId').value,
+            targetArtifactId: document.getElementById('targetArtifactId').value
+        };
+
+        fetch('/api/configuration', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(config)
+        })
+        .then(response => {
+            if (response.ok) {
+                alert("Configuration sauvegardée avec succès !");
+            } else {
+                alert("Erreur lors de la sauvegarde de la configuration.");
+            }
+        })
+        .catch(error => {
+            console.error('Error saving config:', error);
+            alert("Erreur réseau.");
+        });
+    }
+</script>
+</body>
+</html>
