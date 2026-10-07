@@ -31,9 +31,26 @@ public class MigrationAiService {
      * @return La réponse générée par le LLM.
      */
     public String analyzeAndRefactor(String systemPromptTemplate, Map<String, Object> systemParams, String userMessage) {
+        return analyzeAndRefactor(systemPromptTemplate, systemParams, userMessage, null);
+    }
+
+    /**
+     * Méthode générique pour interroger le LLM avec un contexte et une requête, et des instructions supplémentaires.
+     *
+     * @param systemPromptTemplate Le template du System Prompt.
+     * @param systemParams Les paramètres pour remplir le template du System Prompt.
+     * @param userMessage Le message ou le code de l'utilisateur à analyser/refactoriser.
+     * @param additionalInstructions Instructions complémentaires pour le LLM.
+     * @return La réponse générée par le LLM.
+     */
+    public String analyzeAndRefactor(String systemPromptTemplate, Map<String, Object> systemParams, String userMessage, String additionalInstructions) {
         log.debug("Appel au LLM pour refactoring...");
 
-        SystemPromptTemplate promptTemplate = new SystemPromptTemplate(systemPromptTemplate);
+        String finalPromptTemplate = systemPromptTemplate;
+        if (additionalInstructions != null && !additionalInstructions.trim().isEmpty()) {
+            finalPromptTemplate += "\n\nVoici des directives supplémentaires de l'utilisateur pour ce fichier : " + additionalInstructions;
+        }
+        SystemPromptTemplate promptTemplate = new SystemPromptTemplate(finalPromptTemplate);
         Message systemMessage = promptTemplate.createMessage(systemParams);
         UserMessage userMsg = new UserMessage(userMessage);
 

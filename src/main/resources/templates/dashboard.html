@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard de Migration</title>
+    <!-- Bootstrap CSS for styling -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .badge-PENDING { background-color: #6c757d; }
+        .badge-IN_PROGRESS { background-color: #0d6efd; }
+        .badge-SUCCESS { background-color: #198754; }
+        .badge-ERROR { background-color: #dc3545; }
+    </style>
+</head>
+<body>
+<div class="container mt-5">
+    <h1 class="mb-4">Suivi de Migration</h1>
+
+    <div class="table-responsive">
+        <table class="table table-bordered table-striped">
+            <thead class="table-dark">
+            <tr>
+                <th>Fichier Entrant</th>
+                <th>Fichier(s) Sortant(s)</th>
+                <th>Statut</th>
+                <th>Actions</th>
+            </tr>
+            </thead>
+            <tbody id="migrationTableBody">
+            <!-- Rows will be populated by JavaScript -->
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Modal for Retrying -->
+<div class="modal fade" id="retryModal" tabindex="-1" aria-labelledby="retryModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="retryModalLabel">Retraiter: <span id="modalFileName"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="retryForm">
+                    <input type="hidden" id="modalFileId">
+                    <div class="mb-3">
+                        <label for="customPrompt" class="form-label">Instructions complémentaires pour l'IA (optionnel)</label>
+                        <textarea class="form-control" id="customPrompt" rows="4"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" onclick="submitRetry()">Lancer le retraitement</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bootstrap Bundle JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+    let retryModal;
+
+    document.addEventListener("DOMContentLoaded", function() {
+        retryModal = new bootstrap.Modal(document.getElementById('retryModal'));
+        fetchData();
+        setInterval(fetchData, 3000); // Polling every 3 seconds
+    });
+
+    function fetchData() {
+        fetch('/api/migration/files')
+            .then(response => response.json())
+            .then(data => {
+                const tbody = document.getElementById('migrationTableBody');
+                tbody.innerHTML = ''; // Clear current content
+
+                data.forEach(file => {
+                    const targetFilesStr = file.targetFiles ? file.targetFiles.join(', ') : '';
+                    let errorMessageHtml = '';
+                    if (file.status === 'ERROR' && file.errorMessage) {
+                         errorMessageHtml = `<br><small class="text-danger">${file.errorMessage}</small>`;
+                    }
+
+                    const row = `<tr>
+                        <td>${file.sourceFile}</td>
+                        <td>${targetFilesStr}</td>
+                        <td>
+                            <span class="badge badge-${file.status}">${file.status}</span>
+                            ${errorMessageHtml}
+                        </td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary"
+                                    ${(file.status === 'PENDING' || file.status === 'IN_PROGRESS') ? 'disabled' : ''}
+                                    onclick="openRetryModal(${file.id}, '${file.sourceFile}')">
+                                Retraiter
+                            </button>
+                        </td>
+                    </tr>`;
+                    tbody.innerHTML += row;
+                });
+            })
+            .catch(error => console.error('Error fetching data:', error));
+    }
+
+    function openRetryModal(id, sourceFile) {
+        document.getElementById('modalFileId').value = id;
+        document.getElementById('modalFileName').textContent = sourceFile;
+        document.getElementById('customPrompt').value = '';
+        retryModal.show();
+    }
+
+    function submitRetry() {
+        const id = document.getElementById('modalFileId').value;
+        const customPrompt = document.getElementById('customPrompt').value;
+
+        fetch(`/api/migration/files/${id}/retry`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ customPrompt: customPrompt })
+        })
+        .then(response => {
+            if (response.ok) {
+                retryModal.hide();
+                fetchData(); // Immediately refresh the table
+            } else {
+                alert("Erreur lors de la relance du traitement.");
+            }
+        })
+        .catch(error => {
+            console.error('Error retrying:', error);
+            alert("Erreur réseau.");
+        });
+    }
+</script>
+</body>
+</html>
