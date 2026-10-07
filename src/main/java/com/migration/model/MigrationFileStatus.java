@@ -26,6 +26,12 @@ public class MigrationFileStatus {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    private String absolutePath;
+    private String fileType;
+
+    private boolean isConverted;
+    private boolean isValidated;
+
     private String sourceFile;
 
     @ElementCollection(fetch = FetchType.EAGER)

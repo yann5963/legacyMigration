@@ -23,7 +23,8 @@
 <div class="container mt-5">
     <h1 class="mb-4">Configuration Globale</h1>
 
-    <div class="card">
+    <div class="card mb-4">
+        <div class="card-header">Paramètres du Projet Cible</div>
         <div class="card-body">
             <form id="configForm">
                 <div class="mb-3">
@@ -49,6 +50,23 @@
 
                 <button type="button" class="btn btn-primary" onclick="saveConfig()">Sauvegarder la configuration</button>
             </form>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header">Initialisation & Scan des sources</div>
+        <div class="card-body">
+            <form id="scanForm">
+                <div class="mb-3">
+                    <label for="sourceRootPath" class="form-label">Chemin absolu du projet source (Legacy)</label>
+                    <input type="text" class="form-control" id="sourceRootPath" placeholder="/chemin/vers/projet-legacy" required>
+                </div>
+                <button type="button" class="btn btn-success" onclick="scanProject()" id="scanButton">Scanner le projet</button>
+            </form>
+            <div id="scanResult" class="mt-3" style="display: none;">
+                <div class="alert alert-info" id="scanMessage"></div>
+                <a href="/dashboard" class="btn btn-outline-primary">Aller au Dashboard de Migration</a>
+            </div>
         </div>
     </div>
 </div>
@@ -93,6 +111,40 @@
         .catch(error => {
             console.error('Error saving config:', error);
             alert("Erreur réseau.");
+        });
+    }
+
+    function scanProject() {
+        const path = document.getElementById('sourceRootPath').value;
+        if (!path) {
+            alert("Veuillez entrer un chemin valide.");
+            return;
+        }
+
+        const btn = document.getElementById('scanButton');
+        btn.disabled = true;
+        btn.textContent = "Scan en cours...";
+
+        fetch('/api/project/scan', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sourceRootPath: path })
+        })
+        .then(response => {
+            if (!response.ok) throw new Error("Erreur serveur");
+            return response.json();
+        })
+        .then(data => {
+            document.getElementById('scanResult').style.display = 'block';
+            document.getElementById('scanMessage').textContent = `${data.filesFound} fichiers pertinents trouvés et préparés pour la conversion.`;
+        })
+        .catch(error => {
+            console.error('Error scanning:', error);
+            alert("Erreur lors du scan (Vérifiez le chemin).");
+        })
+        .finally(() => {
+            btn.disabled = false;
+            btn.textContent = "Scanner le projet";
         });
     }
 </script>

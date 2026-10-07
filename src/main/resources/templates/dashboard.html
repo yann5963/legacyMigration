@@ -7,9 +7,10 @@
     <!-- Bootstrap CSS for styling -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        .badge-PENDING { background-color: #6c757d; }
-        .badge-IN_PROGRESS { background-color: #0d6efd; }
-        .badge-SUCCESS { background-color: #198754; }
+        .badge-SCANNED { background-color: #6c757d; }
+        .badge-CONVERTING { background-color: #0dcaf0; color: #000; }
+        .badge-NEEDS_REVIEW { background-color: #ffc107; color: #000; }
+        .badge-VALIDATED { background-color: #198754; }
         .badge-ERROR { background-color: #dc3545; }
     </style>
 </head>
@@ -28,15 +29,15 @@
 
 <div class="container mt-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1>Suivi de Migration</h1>
-        <button class="btn btn-success" onclick="startMigration()">Démarrer la migration globale</button>
+        <h1>Dashboard de Migration (Manuel)</h1>
     </div>
 
     <div class="table-responsive">
         <table class="table table-bordered table-striped">
             <thead class="table-dark">
             <tr>
-                <th>Fichier Entrant</th>
+                <th>Type</th>
+                <th>Fichier (Chemin absolu)</th>
                 <th>Fichier(s) Sortant(s)</th>
                 <th>Statut</th>
                 <th>Actions</th>
@@ -54,21 +55,21 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="retryModalLabel">Retraiter: <span id="modalFileName"></span></h5>
+                <h5 class="modal-title" id="retryModalLabel">Ajuster avec l'IA: <span id="modalFileName"></span></h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
                 <form id="retryForm">
                     <input type="hidden" id="modalFileId">
                     <div class="mb-3">
-                        <label for="customPrompt" class="form-label">Instructions complémentaires pour l'IA (optionnel)</label>
+                        <label for="customPrompt" class="form-label">Instructions complémentaires pour l'IA</label>
                         <textarea class="form-control" id="customPrompt" rows="4"></textarea>
                     </div>
                 </form>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
-                <button type="button" class="btn btn-primary" onclick="submitRetry()">Lancer le retraitement</button>
+                <button type="button" class="btn btn-primary" onclick="submitRetry()">Relancer la conversion</button>
             </div>
         </div>
     </div>
@@ -100,25 +101,50 @@
                          errorMessageHtml = `<br><small class="text-danger">${file.errorMessage}</small>`;
                     }
 
+                    let actionsHtml = '';
+                    if (file.status === 'SCANNED' || file.status === 'ERROR') {
+                        actionsHtml = `<button class="btn btn-sm btn-primary" onclick="convertFile(${file.id})">Convertir</button>`;
+                    } else if (file.status === 'NEEDS_REVIEW') {
+                        actionsHtml = `
+                            <button class="btn btn-sm btn-success me-1" onclick="validateFile(${file.id})">Valider</button>
+                            <button class="btn btn-sm btn-warning" onclick="openRetryModal(${file.id}, '${file.sourceFile}')">Ajuster avec l'IA</button>
+                        `;
+                    } else if (file.status === 'VALIDATED') {
+                        actionsHtml = `<span class="text-success">✔ Validé</span>`;
+                    }
+
                     const row = `<tr>
-                        <td>${file.sourceFile}</td>
+                        <td><span class="badge bg-secondary">${file.fileType}</span></td>
+                        <td title="${file.absolutePath}">${file.sourceFile}</td>
                         <td>${targetFilesStr}</td>
                         <td>
                             <span class="badge badge-${file.status}">${file.status}</span>
                             ${errorMessageHtml}
                         </td>
-                        <td>
-                            <button class="btn btn-sm btn-outline-primary"
-                                    ${(file.status === 'PENDING' || file.status === 'IN_PROGRESS') ? 'disabled' : ''}
-                                    onclick="openRetryModal(${file.id}, '${file.sourceFile}')">
-                                Retraiter
-                            </button>
-                        </td>
+                        <td>${actionsHtml}</td>
                     </tr>`;
                     tbody.innerHTML += row;
                 });
             })
             .catch(error => console.error('Error fetching data:', error));
+    }
+
+    function convertFile(id) {
+        fetch(`/api/migration/files/${id}/convert`, { method: 'POST' })
+        .then(response => {
+            if (response.ok) fetchData();
+            else alert("Erreur lors de la demande de conversion.");
+        })
+        .catch(error => console.error('Error converting:', error));
+    }
+
+    function validateFile(id) {
+        fetch(`/api/migration/files/${id}/validate`, { method: 'POST' })
+        .then(response => {
+            if (response.ok) fetchData();
+            else alert("Erreur lors de la validation.");
+        })
+        .catch(error => console.error('Error validating:', error));
     }
 
     function openRetryModal(id, sourceFile) {
@@ -134,15 +160,13 @@
 
         fetch(`/api/migration/files/${id}/retry`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ customPrompt: customPrompt })
         })
         .then(response => {
             if (response.ok) {
                 retryModal.hide();
-                fetchData(); // Immediately refresh the table
+                fetchData();
             } else {
                 alert("Erreur lors de la relance du traitement.");
             }
@@ -151,20 +175,6 @@
             console.error('Error retrying:', error);
             alert("Erreur réseau.");
         });
-    }
-
-    function startMigration() {
-        if(confirm("Avez-vous bien vérifié la configuration globale avant de démarrer ?")) {
-            fetch('/api/migration/files/start', { method: 'POST' })
-            .then(response => {
-                if (response.ok) {
-                    alert("Migration démarrée avec succès.");
-                } else {
-                    alert("Erreur au démarrage de la migration.");
-                }
-            })
-            .catch(error => console.error('Error starting migration:', error));
-        }
     }
 </script>
 </body>

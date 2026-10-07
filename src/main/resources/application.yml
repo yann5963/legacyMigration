@@ -1,30 +1,48 @@
 spring:
   application:
     name: migration-tool
-  autoconfigure:
-    exclude: org.springframework.ai.autoconfigure.vectorstore.pgvector.PgVectorStoreAutoConfiguration
+
+  # Config for target PostgreSQL Database
   datasource:
-    url: jdbc:h2:mem:migration_db;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
-    username: sa
-    password:
-    driver-class-name: org.h2.Driver
+    url: jdbc:postgresql://localhost:5432/migration_db
+    username: migration_user
+    password: migration_password
+    driver-class-name: org.postgresql.Driver
+
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: update
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.H2Dialect
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  # Spring AI Configuration
   ai:
     ollama:
       base-url: http://localhost:11434
       chat:
         options:
+          # Spécifiez le modèle Ollama que vous souhaitez utiliser (ex: mistral, llama3)
           model: mistral
           temperature: 0.2
+
+    vectorstore:
+      pgvector:
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        dimensions: 1536 # À ajuster selon le modèle d'embedding utilisé
+
+# Configuration spécifique à l'outil de migration
 migration:
   source:
-    informix-url: jdbc:h2:mem:legacy_db
-    legacy-dir: /tmp
+    # URL JDBC pour la base Informix
+    informix-url: jdbc:informix-sqli://localhost:9088/legacy_db:INFORMIXSERVER=informix;USER=informix;PASSWORD=informix_password
+    # Chemin vers le répertoire contenant le code source legacy J2EE
+    legacy-dir: /path/to/legacy/j2ee/project
+
   target:
-    output-dir: /tmp
-  require-human-validation: false
+    # Chemin où le nouveau code Spring Boot sera généré
+    output-dir: /path/to/migrated/springboot/project
+
+  # Si true, l'outil demandera une validation humaine dans la console pour les étapes ambiguës
+  require-human-validation: true

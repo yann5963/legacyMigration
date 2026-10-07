@@ -1,0 +1,28 @@
+package com.migration.controller;
+
+import com.migration.dto.ScanRequest;
+import com.migration.service.SourceScannerService;
+import com.migration.pipeline.ProjectInitializerStep;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+import java.util.Map;
+
+@RestController
+@RequestMapping("/api/project")
+@RequiredArgsConstructor
+public class ProjectController {
+
+    private final SourceScannerService scannerService;
+    private final ProjectInitializerStep initializerStep;
+
+    @PostMapping("/scan")
+    public ResponseEntity<Map<String, Integer>> scanProject(@RequestBody ScanRequest request) {
+        initializerStep.execute();
+        int count = scannerService.scanProject(request.getSourceRootPath());
+        return ResponseEntity.ok(Map.of("filesFound", count));
+    }
+}
