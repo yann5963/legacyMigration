@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  # Source Database - Legacy J2EE
+  informix:
+    image: ibmcom/informix-developer-database:latest
+    container_name: migration-informix
+    environment:
+      - LICENSE=accept
+      - DB_LOCALE=en_US.utf8
+      - CLIENT_LOCALE=en_US.utf8
+      - INFORMIX_PASSWORD=informix_password
+    ports:
+      - "9088:9088"
+      - "9089:9089"
+    volumes:
+      - informix-data:/opt/ibm/data
+
+  # Target Database & Vector Store - Spring Boot
+  # Note: The user mentioned having an existing pgvector container,
+  # but this service is provided for reference and completeness.
+  postgres-vector:
+    image: pgvector/pgvector:pg16
+    container_name: migration-postgres-vector
+    environment:
+      - POSTGRES_USER=migration_user
+      - POSTGRES_PASSWORD=migration_password
+      - POSTGRES_DB=migration_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  # Local LLM - Optional for local models
+  ollama:
+    image: ollama/ollama:latest
+    container_name: migration-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+
+volumes:
+  informix-data:
+  postgres-data:
+  ollama-data:
