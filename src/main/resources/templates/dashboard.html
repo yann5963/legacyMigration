@@ -12,6 +12,7 @@
         .badge-NEEDS_REVIEW { background-color: #ffc107; color: #000; }
         .badge-VALIDATED { background-color: #198754; }
         .badge-ERROR { background-color: #dc3545; }
+        pre { background-color: #f8f9fa; padding: 15px; border: 1px solid #dee2e6; border-radius: 5px; }
     </style>
 </head>
 <body>
@@ -37,6 +38,7 @@
             <thead class="table-dark">
             <tr>
                 <th>Type</th>
+                <th>Couche</th>
                 <th>Fichier (Chemin absolu)</th>
                 <th>Fichier(s) Sortant(s)</th>
                 <th>Statut</th>
@@ -75,14 +77,43 @@
     </div>
 </div>
 
+<!-- Modal for Viewing Code -->
+<div class="modal fade modal-xl" id="codeModal" tabindex="-1" aria-labelledby="codeModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="codeModalLabel">Aperçu du Code Généré</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <ul class="nav nav-tabs" id="codeTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="source-tab" data-bs-toggle="tab" data-bs-target="#source-pane" type="button" role="tab">Code Source Métier</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="test-tab" data-bs-toggle="tab" data-bs-target="#test-pane" type="button" role="tab">Test Unitaire (JUnit 5)</button>
+                    </li>
+                </ul>
+                <div class="tab-content mt-3" id="codeTabsContent">
+                    <div class="tab-pane fade show active" id="source-pane" role="tabpanel"><pre><code id="sourceCodeBlock"></code></pre></div>
+                    <div class="tab-pane fade" id="test-pane" role="tabpanel"><pre><code id="testCodeBlock"></code></pre></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Bootstrap Bundle JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
     let retryModal;
+    let codeModal;
+    let fileDataMap = new Map();
 
     document.addEventListener("DOMContentLoaded", function() {
         retryModal = new bootstrap.Modal(document.getElementById('retryModal'));
+        codeModal = new bootstrap.Modal(document.getElementById('codeModal'));
         fetchData();
         setInterval(fetchData, 3000); // Polling every 3 seconds
     });
@@ -94,18 +125,40 @@
                 const tbody = document.getElementById('migrationTableBody');
                 tbody.innerHTML = ''; // Clear current content
 
+                // Sort by layer
+                data.sort((a, b) => (a.layer || 1) - (b.layer || 1));
+
+                // Calculate unvalidated dependencies warning
+                const isLayerValidated = (layer) => data.filter(f => f.layer === layer).every(f => f.status === 'VALIDATED');
+
                 data.forEach(file => {
+                    fileDataMap.set(file.id, file);
                     const targetFilesStr = file.targetFiles ? file.targetFiles.join(', ') : '';
                     let errorMessageHtml = '';
                     if (file.status === 'ERROR' && file.errorMessage) {
                          errorMessageHtml = `<br><small class="text-danger">${file.errorMessage}</small>`;
                     }
 
+                    // Dependency warning check (if layer > 1 and lower layers are not all validated)
+                    let warningClass = '';
+                    let isBlocked = false;
+                    if (file.layer > 1 && file.status === 'SCANNED') {
+                        for(let l = 1; l < file.layer; l++) {
+                            if (!isLayerValidated(l)) {
+                                isBlocked = true;
+                                warningClass = 'table-warning';
+                                errorMessageHtml += `<br><small class="text-warning">En attente de la Couche ${l}</small>`;
+                                break;
+                            }
+                        }
+                    }
+
                     let actionsHtml = '';
                     if (file.status === 'SCANNED' || file.status === 'ERROR') {
-                        actionsHtml = `<button class="btn btn-sm btn-primary" onclick="convertFile(${file.id})">Convertir</button>`;
+                        actionsHtml = `<button class="btn btn-sm btn-primary" ${isBlocked ? 'disabled' : ''} onclick="convertFile(${file.id})">Convertir</button>`;
                     } else if (file.status === 'NEEDS_REVIEW') {
                         actionsHtml = `
+                            <button class="btn btn-sm btn-info me-1" onclick="viewCode(${file.id})">Voir le code</button>
                             <button class="btn btn-sm btn-success me-1" onclick="validateFile(${file.id})">Valider</button>
                             <button class="btn btn-sm btn-warning" onclick="openRetryModal(${file.id}, '${file.sourceFile}')">Ajuster avec l'IA</button>
                         `;
@@ -113,8 +166,9 @@
                         actionsHtml = `<span class="text-success">✔ Validé</span>`;
                     }
 
-                    const row = `<tr>
+                    const row = `<tr class="${warningClass}">
                         <td><span class="badge bg-secondary">${file.fileType}</span></td>
+                        <td><strong>Couche ${file.layer || 1}</strong></td>
                         <td title="${file.absolutePath}">${file.sourceFile}</td>
                         <td>${targetFilesStr}</td>
                         <td>
@@ -175,6 +229,19 @@
             console.error('Error retrying:', error);
             alert("Erreur réseau.");
         });
+    }
+
+    function viewCode(id) {
+        fetch(`/api/migration/files/${id}/content`)
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('sourceCodeBlock').textContent = data.sourceCode || 'Non généré.';
+                document.getElementById('testCodeBlock').textContent = data.testCode || 'Non généré.';
+                codeModal.show();
+            })
+            .catch(err => {
+                alert("Erreur lors de la récupération du code.");
+            });
     }
 </script>
 </body>
