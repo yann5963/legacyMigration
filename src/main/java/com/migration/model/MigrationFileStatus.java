@@ -50,7 +50,7 @@ public class MigrationFileStatus {
     private MigrationStatus status;
 
     private String errorMessage;
-    @OneToMany(mappedBy = "migrationFileStatus", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @OneToMany(mappedBy = "migrationFileStatus", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @Builder.Default
     private List<FileChunkStatus> chunks = new ArrayList<>();
 }
