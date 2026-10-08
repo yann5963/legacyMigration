@@ -154,6 +154,21 @@
                         }
                     }
 
+                    let chunkProgressHtml = "";
+
+                    if (file.chunks && file.chunks.length > 0) {
+
+                        let total = file.chunks.length;
+
+                        let converted = file.chunks.filter(c => c.status === "SUCCESS").length;
+
+                        if (file.status === "CONVERTING" || file.status === "ERROR" || file.status === "NEEDS_REVIEW") {
+
+                            chunkProgressHtml = `<br><small class="text-info">EN COURS (${converted}/${total} chunks convertis)</small>`;
+
+                        }
+
+                    }
                     let actionsHtml = '';
                     if (file.status === 'SCANNED' || file.status === 'ERROR') {
                         actionsHtml = `<button class="btn btn-sm btn-primary" ${isBlocked ? 'disabled' : ''} onclick="convertFile(${file.id})">Convertir</button>`;
@@ -174,6 +189,7 @@
                         <td>${targetFilesStr}</td>
                         <td>
                             <span class="badge badge-${file.status}">${file.status}</span>
+                            ${chunkProgressHtml}
                             ${errorMessageHtml}
                         </td>
                         <td>${actionsHtml}</td>
