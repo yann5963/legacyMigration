@@ -2,9 +2,12 @@ package com.migration.parser;
 
 import com.github.javaparser.StaticJavaParser;
 import com.github.javaparser.ast.CompilationUnit;
+import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.symbolsolver.JavaSymbolSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.CombinedTypeSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.ReflectionTypeSolver;
+import com.migration.model.MethodChunk;
+import com.migration.model.ChunkStatus;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -92,5 +95,37 @@ public class LegacyCodeParserService {
             log.error("Impossible de lire le fichier brut : {}", relativePath, e);
             return null;
         }
+    }
+
+    public boolean shouldChunk(String classContent) {
+        if (classContent == null) return false;
+        long lineCount = classContent.lines().count();
+        return lineCount > 1500;
+    }
+
+    public String extractClassStructure(String classContent) {
+        CompilationUnit cu = StaticJavaParser.parse(classContent);
+        cu.findAll(MethodDeclaration.class).forEach(method -> {
+            method.removeBody();
+        });
+        return cu.toString();
+    }
+
+    public List<MethodChunk> extractMethods(String classContent) {
+        List<MethodChunk> methodChunks = new ArrayList<>();
+        CompilationUnit cu = StaticJavaParser.parse(classContent);
+        cu.findAll(MethodDeclaration.class).forEach(method -> {
+            String methodName = method.getNameAsString();
+            String originalSignature = method.getDeclarationAsString(true, true, true);
+            String originalCode = method.toString();
+
+            methodChunks.add(MethodChunk.builder()
+                .methodName(methodName)
+                .originalSignature(originalSignature)
+                .originalCode(originalCode)
+                .status(ChunkStatus.PENDING)
+                .build());
+        });
+        return methodChunks;
     }
 }

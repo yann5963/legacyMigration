@@ -15,6 +15,9 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.List;
+import java.util.ArrayList;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.CascadeType;
 
 @Entity
 @Data
@@ -47,4 +50,7 @@ public class MigrationFileStatus {
     private MigrationStatus status;
 
     private String errorMessage;
+    @OneToMany(mappedBy = "migrationFileStatus", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @Builder.Default
+    private List<FileChunkStatus> chunks = new ArrayList<>();
 }
