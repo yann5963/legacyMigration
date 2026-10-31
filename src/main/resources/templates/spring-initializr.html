@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spring Initializr - Migration Tool</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .dependency-group {
+            margin-bottom: 1.5rem;
+        }
+        .dependency-item {
+            margin-bottom: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="/dashboard">Migration Tool</a>
+        <div class="collapse navbar-collapse">
+            <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+                <li class="nav-item"><a class="nav-link" href="/dashboard">Dashboard</a></li>
+                <li class="nav-item"><a class="nav-link" href="/configuration">Configuration</a></li>
+                <li class="nav-item"><a class="nav-link active" href="/spring-initializr">Spring Initializr</a></li>
+            </ul>
+        </div>
+    </div>
+</nav>
+
+<div class="container mt-5">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>Choix des Modules Spring Boot</h1>
+        <a href="/configuration" class="btn btn-outline-secondary">Retour à la Configuration</a>
+    </div>
+
+    <div class="alert alert-info" id="loadingMessage">
+        Chargement des modules depuis start.spring.io...
+    </div>
+
+    <form id="initializrForm" style="display: none;">
+        <div class="card mb-4">
+            <div class="card-header">Dépendances Disponibles</div>
+            <div class="card-body">
+                <div id="dependenciesContainer" class="row">
+                    <!-- Les dépendances seront injectées ici par JavaScript -->
+                </div>
+            </div>
+        </div>
+
+        <div class="d-flex justify-content-end mb-5">
+            <button type="button" class="btn btn-success btn-lg" onclick="generateProject()" id="generateBtn">Créer le projet vide</button>
+        </div>
+
+        <div id="resultMessage" class="alert mt-3" style="display: none;"></div>
+    </form>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        // fetch metadata from spring initializr
+        fetch('https://start.spring.io/metadata/client')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error("Erreur lors de la récupération des métadonnées de Spring Initializr");
+                }
+                return response.json();
+            })
+            .then(data => {
+                renderDependencies(data.dependencies.values);
+                document.getElementById('loadingMessage').style.display = 'none';
+                document.getElementById('initializrForm').style.display = 'block';
+            })
+            .catch(error => {
+                console.error(error);
+                document.getElementById('loadingMessage').className = 'alert alert-danger';
+                document.getElementById('loadingMessage').textContent = 'Erreur de chargement: ' + error.message;
+            });
+    });
+
+    function renderDependencies(dependencyGroups) {
+        const container = document.getElementById('dependenciesContainer');
+
+        dependencyGroups.forEach(group => {
+            const col = document.createElement('div');
+            col.className = 'col-md-4 dependency-group';
+
+            let html = `<h5>${group.name}</h5><div class="ms-2">`;
+
+            group.values.forEach(dep => {
+                html += `
+                    <div class="form-check dependency-item">
+                        <input class="form-check-input" type="checkbox" value="${dep.id}" id="dep-${dep.id}">
+                        <label class="form-check-label" for="dep-${dep.id}">
+                            <strong>${dep.name}</strong><br>
+                            <small class="text-muted">${dep.description}</small>
+                        </label>
+                    </div>
+                `;
+            });
+
+            html += `</div>`;
+            col.innerHTML = html;
+            container.appendChild(col);
+        });
+    }
+
+    function generateProject() {
+        const checkboxes = document.querySelectorAll('.form-check-input:checked');
+        const dependencies = Array.from(checkboxes).map(cb => cb.value);
+
+        const btn = document.getElementById('generateBtn');
+        btn.disabled = true;
+        btn.textContent = "Création en cours...";
+
+        const resultMessage = document.getElementById('resultMessage');
+        resultMessage.style.display = 'none';
+        resultMessage.className = 'alert mt-3';
+
+        fetch('/api/initializr/generate', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ dependencies: dependencies })
+        })
+        .then(async response => {
+            if (response.ok) {
+                resultMessage.className = 'alert alert-success mt-3';
+                resultMessage.textContent = 'Projet créé avec succès !';
+                resultMessage.style.display = 'block';
+            } else {
+                const text = await response.text();
+                throw new Error(text || "Erreur lors de la création du projet");
+            }
+        })
+        .catch(error => {
+            console.error(error);
+            resultMessage.className = 'alert alert-danger mt-3';
+            resultMessage.textContent = error.message;
+            resultMessage.style.display = 'block';
+        })
+        .finally(() => {
+            btn.disabled = false;
+            btn.textContent = "Créer le projet vide";
+        });
+    }
+</script>
+</body>
+</html>

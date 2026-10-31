@@ -21,4 +21,5 @@ public class ProjectConfiguration {
     private String targetSpringBootVersion;
     private String targetGroupId;
     private String targetArtifactId;
+    private String targetProjectPath;
 }
