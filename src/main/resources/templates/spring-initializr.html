@@ -60,7 +60,11 @@
 <script>
     document.addEventListener("DOMContentLoaded", function() {
         // fetch metadata from spring initializr
-        fetch('https://start.spring.io/metadata/client')
+        fetch('https://start.spring.io/metadata/client', {
+            headers: {
+                'Accept': 'application/vnd.initializr.v2.2+json'
+            }
+        })
             .then(response => {
                 if (!response.ok) {
                     throw new Error("Erreur lors de la récupération des métadonnées de Spring Initializr");
