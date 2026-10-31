@@ -5,6 +5,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Description;
 
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.function.Function;
 
 /**
@@ -27,6 +29,13 @@ public class FunctionCallingConfig {
             log.info("Le LLM demande l'écriture d'un fichier : {}", request.relativePath());
             // TODO: Implémenter la logique réelle d'écriture sur le disque dans le répertoire cible
             // (utiliser la propriété migration.target.output-dir)
+            try {
+                // Simuler l'écriture sur le disque
+                Files.write(Paths.get(request.relativePath()), request.content().getBytes());
+            } catch (Exception e) {
+                log.error("Erreur lors de l'écriture du fichier : {}", request.relativePath(), e);
+                return new WriteFileResponse(false, "Erreur lors de l'écriture du fichier : " + e.getMessage());
+            }
 
             // Pour l'instant, on simule le succès
             return new WriteFileResponse(true, "Fichier " + request.relativePath() + " écrit avec succès.");
