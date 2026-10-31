@@ -47,8 +47,15 @@
                     <label for="targetArtifactId" class="form-label">Artifact ID cible (Optionnel)</label>
                     <input type="text" class="form-control" id="targetArtifactId" placeholder="app-moderne">
                 </div>
+                <div class="mb-3">
+                    <label for="targetProjectPath" class="form-label">Chemin absolu du projet destination</label>
+                    <input type="text" class="form-control" id="targetProjectPath" placeholder="/chemin/vers/projet-destination">
+                </div>
 
-                <button type="button" class="btn btn-primary" onclick="saveConfig()">Sauvegarder la configuration</button>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-primary" onclick="saveConfig()">Sauvegarder la configuration</button>
+                    <button type="button" class="btn btn-secondary" id="springInitializrBtn" onclick="goToSpringInitializr()" disabled>Spring Initialzr</button>
+                </div>
             </form>
         </div>
     </div>
@@ -83,17 +90,42 @@
                     document.getElementById('targetSpringBootVersion').value = data.targetSpringBootVersion || "3.x";
                     document.getElementById('targetGroupId').value = data.targetGroupId || "";
                     document.getElementById('targetArtifactId').value = data.targetArtifactId || "";
+
+                    const projectPathInput = document.getElementById('targetProjectPath');
+                    if (projectPathInput) {
+                        projectPathInput.value = data.targetProjectPath || "";
+                    }
+
+                    checkProjectPath();
                 }
             })
             .catch(error => console.error('Error fetching config:', error));
+
+        const targetProjectPathInput = document.getElementById('targetProjectPath');
+        if (targetProjectPathInput) {
+            targetProjectPathInput.addEventListener('input', checkProjectPath);
+        }
     });
+
+    function checkProjectPath() {
+        const path = document.getElementById('targetProjectPath').value;
+        const btn = document.getElementById('springInitializrBtn');
+        if (btn) {
+            btn.disabled = !path || path.trim() === '';
+        }
+    }
+
+    function goToSpringInitializr() {
+        window.location.href = '/spring-initializr';
+    }
 
     function saveConfig() {
         const config = {
             targetJavaVersion: document.getElementById('targetJavaVersion').value,
             targetSpringBootVersion: document.getElementById('targetSpringBootVersion').value,
             targetGroupId: document.getElementById('targetGroupId').value,
-            targetArtifactId: document.getElementById('targetArtifactId').value
+            targetArtifactId: document.getElementById('targetArtifactId').value,
+            targetProjectPath: document.getElementById('targetProjectPath') ? document.getElementById('targetProjectPath').value : null
         };
 
         fetch('/api/configuration', {
