@@ -40,8 +40,21 @@ public class DashboardController {
     @GetMapping("/{id}/content")
     public ResponseEntity<Map<String, String>> getFileContent(@PathVariable Long id) {
         return repository.findById(id).map(status -> {
+            String originalCode = "Non généré.";
             String sourceCode = "Non généré.";
             String testCode = "Non généré.";
+
+            try {
+                if (status.getAbsolutePath() != null) {
+                    Path originalPath = Paths.get(status.getAbsolutePath());
+                    if (Files.exists(originalPath)) {
+                        originalCode = Files.readString(originalPath).trim();
+                    }
+                }
+            } catch (Exception e) {
+                // Ignore IO errors
+            }
+
             List<String> targetFiles = status.getTargetFiles();
             try {
                 if (targetFiles != null && targetFiles.size() > 0) {
@@ -55,7 +68,7 @@ public class DashboardController {
             } catch (Exception e) {
                 // Ignore IO errors for retrieval
             }
-            return ResponseEntity.ok(Map.of("sourceCode", sourceCode, "testCode", testCode));
+            return ResponseEntity.ok(Map.of("originalCode", originalCode, "sourceCode", sourceCode, "testCode", testCode));
         }).orElseGet(() -> ResponseEntity.notFound().build());
     }
 
