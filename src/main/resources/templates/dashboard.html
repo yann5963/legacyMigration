@@ -34,6 +34,12 @@
         <a href="/configuration" class="btn btn-primary">Configurer le Projet & Scanner</a>
     </div>
 
+    <ul class="nav nav-tabs mb-3" id="fileTypeTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="tab-all" data-bs-toggle="tab" type="button" role="tab">Tous</button>
+        </li>
+    </ul>
+
     <div class="table-responsive">
         <table class="table table-bordered table-striped">
             <thead class="table-dark">
@@ -119,6 +125,8 @@
     let retryModal;
     let codeModal;
     let fileDataMap = new Map();
+    let allMigrationData = [];
+    let currentFilterType = 'ALL';
 
     document.addEventListener("DOMContentLoaded", function() {
         retryModal = new bootstrap.Modal(document.getElementById('retryModal'));
@@ -131,81 +139,139 @@
         fetch('/api/migration/files')
             .then(response => response.json())
             .then(data => {
-                const tbody = document.getElementById('migrationTableBody');
-                tbody.innerHTML = ''; // Clear current content
-
-                // Sort by layer
-                data.sort((a, b) => (a.layer || 1) - (b.layer || 1));
-
-                // Calculate unvalidated dependencies warning
-                const isLayerValidated = (layer) => data.filter(f => f.layer === layer).every(f => f.status === 'VALIDATED');
-
-                data.forEach(file => {
-                    fileDataMap.set(file.id, file);
-                    const targetFilesStr = file.targetFiles ? file.targetFiles.join(', ') : '';
-                    let errorMessageHtml = '';
-                    if (file.status === 'ERROR' && file.errorMessage) {
-                         errorMessageHtml = `<br><small class="text-danger">${file.errorMessage}</small>`;
-                    }
-
-                    // Dependency warning check (if layer > 1 and lower layers are not all validated)
-                    let warningClass = '';
-                    let isBlocked = false;
-                    if (file.layer > 1 && file.status === 'SCANNED') {
-                        for(let l = 1; l < file.layer; l++) {
-                            if (!isLayerValidated(l)) {
-                                isBlocked = true;
-                                warningClass = 'table-warning';
-                                errorMessageHtml += `<br><small class="text-warning">En attente de la Couche ${l}</small>`;
-                                break;
-                            }
-                        }
-                    }
-
-                    let chunkProgressHtml = "";
-
-                    if (file.chunks && file.chunks.length > 0) {
-
-                        let total = file.chunks.length;
-
-                        let converted = file.chunks.filter(c => c.status === "SUCCESS").length;
-
-                        if (file.status === "CONVERTING" || file.status === "ERROR" || file.status === "NEEDS_REVIEW") {
-
-                            chunkProgressHtml = `<br><small class="text-info">EN COURS (${converted}/${total} chunks convertis)</small>`;
-
-                        }
-
-                    }
-                    let actionsHtml = '';
-                    if (file.status === 'SCANNED' || file.status === 'ERROR') {
-                        actionsHtml = `<button class="btn btn-sm btn-primary" ${isBlocked ? 'disabled' : ''} onclick="convertFile(${file.id})">Convertir</button>`;
-                    } else if (file.status === 'NEEDS_REVIEW') {
-                        actionsHtml = `
-                            <button class="btn btn-sm btn-info me-1" onclick="viewCode(${file.id})">Voir le code</button>
-                            <button class="btn btn-sm btn-success me-1" onclick="validateFile(${file.id})">Valider</button>
-                            <button class="btn btn-sm btn-warning" onclick="openRetryModal(${file.id}, '${file.sourceFile}')">Ajuster avec l'IA</button>
-                        `;
-                    } else if (file.status === 'VALIDATED') {
-                        actionsHtml = `<span class="text-success">✔ Validé</span>`;
-                    }
-
-                    const row = `<tr class="${warningClass}">
-                        <td><span class="badge bg-secondary">${file.fileType}</span></td>
-                        <td><strong>Couche ${file.layer || 1}</strong></td>
-                        <td title="${file.absolutePath}">${file.sourceFile}</td>
-                        <td>${targetFilesStr}</td>
-                        <td>
-                            <span class="badge badge-${file.status}">${file.status}</span>
-                            ${chunkProgressHtml}
-                            ${errorMessageHtml}
-                        </td>
-                        <td>${actionsHtml}</td>
-                    </tr>`;
-                    tbody.innerHTML += row;
-                });
+                allMigrationData = data;
+                updateTabs();
+                renderTable();
             })
             .catch(error => console.error('Error fetching data:', error));
+    }
+
+    function updateTabs() {
+        const tabsContainer = document.getElementById('fileTypeTabs');
+        if (!tabsContainer) return;
+
+        const types = Array.from(new Set(allMigrationData.map(f => f.fileType).filter(t => t))).sort();
+
+        document.querySelectorAll('.dynamic-tab').forEach(e => e.remove());
+
+        types.forEach(type => {
+            const li = document.createElement('li');
+            li.className = 'nav-item dynamic-tab';
+            li.setAttribute('role', 'presentation');
+
+            const btn = document.createElement('button');
+            btn.className = `nav-link ${currentFilterType === type ? 'active' : ''}`;
+            btn.setAttribute('data-bs-toggle', 'tab');
+            btn.setAttribute('type', 'button');
+            btn.setAttribute('role', 'tab');
+            btn.textContent = type;
+            btn.onclick = () => {
+                currentFilterType = type;
+                renderTable();
+
+                // Update active state of tabs
+                document.querySelectorAll('#fileTypeTabs .nav-link').forEach(el => el.classList.remove('active'));
+                btn.classList.add('active');
+            };
+
+            li.appendChild(btn);
+            tabsContainer.appendChild(li);
+        });
+
+        const tabAllBtn = document.getElementById('tab-all');
+        if (tabAllBtn) {
+            tabAllBtn.className = `nav-link ${currentFilterType === 'ALL' ? 'active' : ''}`;
+            tabAllBtn.onclick = () => {
+                currentFilterType = 'ALL';
+                renderTable();
+
+                // Update active state of tabs
+                document.querySelectorAll('#fileTypeTabs .nav-link').forEach(el => el.classList.remove('active'));
+                tabAllBtn.classList.add('active');
+            };
+        }
+    }
+
+    function renderTable() {
+        const tbody = document.getElementById('migrationTableBody');
+        tbody.innerHTML = ''; // Clear current content
+
+        let data = allMigrationData;
+
+        // Calculate unvalidated dependencies warning (based on all data)
+        const isLayerValidated = (layer) => allMigrationData.filter(f => f.layer === layer).every(f => f.status === 'VALIDATED');
+
+        if (currentFilterType !== 'ALL') {
+            data = data.filter(f => f.fileType === currentFilterType);
+        }
+
+        // Sort by layer
+        data.sort((a, b) => (a.layer || 1) - (b.layer || 1));
+
+        data.forEach(file => {
+            fileDataMap.set(file.id, file);
+            const targetFilesStr = file.targetFiles ? file.targetFiles.join(', ') : '';
+            let errorMessageHtml = '';
+            if (file.status === 'ERROR' && file.errorMessage) {
+                 errorMessageHtml = `<br><small class="text-danger">${file.errorMessage}</small>`;
+            }
+
+            // Dependency warning check (if layer > 1 and lower layers are not all validated)
+            let warningClass = '';
+            let isBlocked = false;
+            if (file.layer > 1 && file.status === 'SCANNED') {
+                for(let l = 1; l < file.layer; l++) {
+                    if (!isLayerValidated(l)) {
+                        isBlocked = true;
+                        warningClass = 'table-warning';
+                        errorMessageHtml += `<br><small class="text-warning">En attente de la Couche ${l}</small>`;
+                        break;
+                    }
+                }
+            }
+
+            let chunkProgressHtml = "";
+
+            if (file.chunks && file.chunks.length > 0) {
+
+                let total = file.chunks.length;
+
+                let converted = file.chunks.filter(c => c.status === "SUCCESS").length;
+
+                if (file.status === "CONVERTING" || file.status === "ERROR" || file.status === "NEEDS_REVIEW") {
+
+                    chunkProgressHtml = `<br><small class="text-info">EN COURS (${converted}/${total} chunks convertis)</small>`;
+
+                }
+
+            }
+            let actionsHtml = '';
+            if (file.status === 'SCANNED' || file.status === 'ERROR') {
+                actionsHtml = `<button class="btn btn-sm btn-primary" ${isBlocked ? 'disabled' : ''} onclick="convertFile(${file.id})">Convertir</button>`;
+            } else if (file.status === 'NEEDS_REVIEW') {
+                actionsHtml = `
+                    <button class="btn btn-sm btn-info me-1" onclick="viewCode(${file.id})">Voir le code</button>
+                    <button class="btn btn-sm btn-success me-1" onclick="validateFile(${file.id})">Valider</button>
+                    <button class="btn btn-sm btn-warning" onclick="openRetryModal(${file.id}, '${file.sourceFile}')">Ajuster avec l'IA</button>
+                `;
+            } else if (file.status === 'VALIDATED') {
+                actionsHtml = `<span class="text-success">✔ Validé</span>`;
+            }
+
+            const row = `<tr class="${warningClass}">
+                <td><span class="badge bg-secondary">${file.fileType}</span></td>
+                <td><strong>Couche ${file.layer || 1}</strong></td>
+                <td title="${file.absolutePath}">${file.sourceFile}</td>
+                <td>${targetFilesStr}</td>
+                <td>
+                    <span class="badge badge-${file.status}">${file.status}</span>
+                    ${chunkProgressHtml}
+                    ${errorMessageHtml}
+                </td>
+                <td>${actionsHtml}</td>
+            </tr>`;
+            tbody.innerHTML += row;
+        });
     }
 
     function convertFile(id) {
