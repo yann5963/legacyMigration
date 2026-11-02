@@ -247,7 +247,10 @@
             }
             let actionsHtml = '';
             if (file.status === 'SCANNED' || file.status === 'ERROR') {
-                actionsHtml = `<button class="btn btn-sm btn-primary" ${isBlocked ? 'disabled' : ''} onclick="convertFile(${file.id})">Convertir</button>`;
+                actionsHtml = `
+                    <button class="btn btn-sm btn-primary me-1" ${isBlocked ? 'disabled' : ''} onclick="convertFile(${file.id})">Convertir</button>
+                    <button class="btn btn-sm btn-warning" onclick="openRetryModal(${file.id}, '${file.sourceFile}')">Ajuster avec l'IA</button>
+                `;
             } else if (file.status === 'NEEDS_REVIEW') {
                 actionsHtml = `
                     <button class="btn btn-sm btn-info me-1" onclick="viewCode(${file.id})">Voir le code</button>
