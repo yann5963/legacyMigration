@@ -49,6 +49,8 @@ public class DashboardController {
                     Path originalPath = Paths.get(status.getAbsolutePath());
                     if (Files.exists(originalPath)) {
                         originalCode = Files.readString(originalPath).trim();
+                    } else {
+                        originalCode = "Fichier introuvable sur le disque : " + status.getSourceFile();
                     }
                 }
             } catch (Exception e) {
