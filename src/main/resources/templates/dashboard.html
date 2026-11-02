@@ -295,7 +295,8 @@
     function openRetryModal(id, sourceFile) {
         document.getElementById('modalFileId').value = id;
         document.getElementById('modalFileName').textContent = sourceFile;
-        document.getElementById('customPrompt').value = '';
+        const file = fileDataMap.get(id);
+        document.getElementById('customPrompt').value = (file && file.lastCustomPrompt) ? file.lastCustomPrompt : '';
         retryModal.show();
     }
 
