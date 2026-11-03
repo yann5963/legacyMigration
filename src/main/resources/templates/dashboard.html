@@ -122,6 +122,21 @@
     </div>
 </div>
 
+<!-- Modal for Viewing Original Source -->
+<div class="modal fade modal-xl" id="sourceModal" tabindex="-1" aria-labelledby="sourceModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="sourceModalLabel">Code Source Original</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <pre><code id="onlyOriginalCodeBlock"></code></pre>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Modal for Viewing Code -->
 <div class="modal fade modal-xl" id="codeModal" tabindex="-1" aria-labelledby="codeModalLabel" aria-hidden="true">
     <div class="modal-dialog">
@@ -165,6 +180,7 @@
     let convertModal;
     let retryModal;
     let codeModal;
+    let sourceModal;
     let fileDataMap = new Map();
     let allMigrationData = [];
     let currentFilterType = 'ALL';
@@ -173,6 +189,7 @@
         convertModal = new bootstrap.Modal(document.getElementById('convertModal'));
         retryModal = new bootstrap.Modal(document.getElementById('retryModal'));
         codeModal = new bootstrap.Modal(document.getElementById('codeModal'));
+        sourceModal = new bootstrap.Modal(document.getElementById('sourceModal'));
         fetchData();
         setInterval(fetchData, 3000); // Polling every 3 seconds
     });
@@ -312,7 +329,10 @@
             }
 
             const row = `<tr class="${warningClass}">
-                <td><span class="badge bg-secondary">${file.fileType}</span></td>
+                <td>
+                    <span class="badge bg-secondary">${file.fileType}</span>
+                    <br><button class="btn btn-sm btn-outline-info mt-1" onclick="viewOriginalSource(${file.id})">Voir source</button>
+                </td>
                 <td><strong>Couche ${file.layer || 1}</strong></td>
                 <td title="${file.absolutePath}">${file.sourceFile}</td>
                 <td>${targetFilesStr}</td>
@@ -503,6 +523,18 @@
             })
             .catch(err => {
                 alert("Erreur lors de la récupération du code.");
+            });
+    }
+
+    function viewOriginalSource(id) {
+        fetch(`/api/migration/files/${id}/content`)
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('onlyOriginalCodeBlock').textContent = data.originalCode || 'Non généré.';
+                sourceModal.show();
+            })
+            .catch(err => {
+                alert("Erreur lors de la récupération du code source.");
             });
     }
 </script>
