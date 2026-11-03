@@ -53,4 +53,8 @@ public class MigrationFileStatus {
     @OneToMany(mappedBy = "migrationFileStatus", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @Builder.Default
     private List<FileChunkStatus> chunks = new ArrayList<>();
+
+    @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
+    @Builder.Default
+    private List<ContextReference> contextFiles = new ArrayList<>();
 }

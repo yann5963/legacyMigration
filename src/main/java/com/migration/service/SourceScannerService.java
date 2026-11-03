@@ -81,6 +81,7 @@ public class SourceScannerService {
             if (getFileExtension(path.getFileName().toString()).equals("JAVA")) {
                 try {
                     CompilationUnit cu = parserService.parseJavaFile(absPath);
+                    MigrationFileStatus sourceStatus = fileStatusMap.get(absPath);
 
                     String packageName = cu.getPackageDeclaration().map(p -> p.getNameAsString()).orElse("");
                     if (!packageName.isEmpty()) {
@@ -89,7 +90,13 @@ public class SourceScannerService {
                             if (fqcnToPath.containsKey(fqcn)) {
                                 String targetPath = fqcnToPath.get(fqcn);
                                 if (!absPath.equals(targetPath)) {
-                                    dependencyGraph.get(absPath).add(targetPath);
+                                    if (!dependencyGraph.get(absPath).contains(targetPath)) {
+                                        dependencyGraph.get(absPath).add(targetPath);
+                                        com.migration.model.ContextReference ref = new com.migration.model.ContextReference();
+                                        ref.setFilePath(targetPath);
+                                        ref.setMode(com.migration.model.ContextMode.SIGNATURE_ONLY);
+                                        sourceStatus.getContextFiles().add(ref);
+                                    }
                                 }
                             }
                         });
@@ -100,7 +107,13 @@ public class SourceScannerService {
                         if (fqcnToPath.containsKey(importedType)) {
                             String targetPath = fqcnToPath.get(importedType);
                             if (!absPath.equals(targetPath)) {
-                                dependencyGraph.get(absPath).add(targetPath);
+                                if (!dependencyGraph.get(absPath).contains(targetPath)) {
+                                    dependencyGraph.get(absPath).add(targetPath);
+                                    com.migration.model.ContextReference ref = new com.migration.model.ContextReference();
+                                    ref.setFilePath(targetPath);
+                                    ref.setMode(com.migration.model.ContextMode.SIGNATURE_ONLY);
+                                    sourceStatus.getContextFiles().add(ref);
+                                }
                             }
                         }
                     });
