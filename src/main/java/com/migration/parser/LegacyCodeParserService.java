@@ -108,6 +108,20 @@ public class LegacyCodeParserService {
         cu.findAll(MethodDeclaration.class).forEach(method -> {
             method.removeBody();
         });
+        cu.findAll(com.github.javaparser.ast.body.ConstructorDeclaration.class).forEach(c -> {
+            c.setBody(new com.github.javaparser.ast.stmt.BlockStmt());
+        });
+        return cu.toString();
+    }
+
+    public String extractSignatures(String classContent) {
+        CompilationUnit cu = StaticJavaParser.parse(classContent);
+        cu.findAll(MethodDeclaration.class).forEach(method -> {
+            method.removeBody();
+        });
+        cu.findAll(com.github.javaparser.ast.body.ConstructorDeclaration.class).forEach(c -> {
+            c.setBody(new com.github.javaparser.ast.stmt.BlockStmt());
+        });
         return cu.toString();
     }
 
