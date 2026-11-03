@@ -22,6 +22,7 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Value;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -70,7 +71,7 @@ public class AsyncMigrationRetryService {
             Path filePath = Paths.get(status.getAbsolutePath());
             String userMessage;
             if (Files.exists(filePath)) {
-                userMessage = Files.readString(filePath);
+                userMessage = Files.readString(filePath, StandardCharsets.ISO_8859_1);
             } else {
                 log.warn("File not found on disk, using dummy content. Path: {}", status.getAbsolutePath());
                 userMessage = "Dummy content for " + status.getSourceFile();
