@@ -1,5 +1,6 @@
 package com.migration.controller;
 
+import com.migration.core.model.TargetProjectConfig;
 import com.migration.model.ProjectConfiguration;
 import com.migration.repository.ProjectConfigurationRepository;
 import lombok.RequiredArgsConstructor;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.*;
 public class ConfigurationController {
 
     private final ProjectConfigurationRepository repository;
+    private final TargetProjectConfig targetProjectConfig;
 
     @GetMapping
     public ProjectConfiguration getConfiguration() {
@@ -22,6 +24,8 @@ public class ConfigurationController {
                     .targetSpringBootVersion("3.2.4")
                     .targetGroupId("com.migrated")
                     .targetArtifactId("app-moderne")
+                    .targetBaseDir(targetProjectConfig.getBaseDir())
+                    .targetBasePackage(targetProjectConfig.getBasePackage())
                     .build();
             return repository.save(defaultConfig);
         });
