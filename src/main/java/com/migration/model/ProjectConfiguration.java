@@ -22,4 +22,6 @@ public class ProjectConfiguration {
     private String targetGroupId;
     private String targetArtifactId;
     private String targetProjectPath;
+    private String targetBaseDir;
+    private String targetBasePackage;
 }

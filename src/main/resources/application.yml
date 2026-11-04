@@ -43,6 +43,8 @@ migration:
   target:
     # Chemin où le nouveau code Spring Boot sera généré
     output-dir: /path/to/migrated/springboot/project
+    base-dir: /path/to/spring-app/src/main/java
+    base-package: com.company.myapp
 
   # Si true, l'outil demandera une validation humaine dans la console pour les étapes ambiguës
   require-human-validation: true
