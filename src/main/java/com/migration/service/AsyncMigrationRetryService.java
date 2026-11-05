@@ -45,7 +45,7 @@ public class AsyncMigrationRetryService {
     private String outputDir;
 
     @Async
-    public void convertFile(Long fileId, String customPrompt, List<com.migration.dto.ContextReferenceDto> contextFilesDto) {
+    public void convertFile(Long fileId, String customPrompt, List<com.migration.dto.ContextReferenceDto> contextFilesDto, String llmModel) {
         MigrationFileStatus status = repository.findById(fileId)
                 .orElseThrow(() -> new IllegalArgumentException("Invalid file ID: " + fileId));
 
@@ -78,9 +78,9 @@ public class AsyncMigrationRetryService {
             }
 
             if (parserService.shouldChunk(userMessage)) {
-                processLargeFile(status, userMessage, customPrompt);
+                processLargeFile(status, userMessage, customPrompt, llmModel);
             } else {
-                processStandardFile(status, userMessage, customPrompt);
+                processStandardFile(status, userMessage, customPrompt, llmModel);
             }
 
         } catch (Exception e) {
@@ -115,7 +115,7 @@ public class AsyncMigrationRetryService {
         return sb.toString();
     }
 
-    private void processStandardFile(MigrationFileStatus status, String userMessage, String customPrompt) throws Exception {
+    private void processStandardFile(MigrationFileStatus status, String userMessage, String customPrompt, String llmModel) throws Exception {
         String systemPrompt = "Tu es un développeur Java expert. Récris le code legacy J2EE suivant en une classe Spring Boot moderne. Tu DOIS générer DEUX blocs de code distincts entourés par ```java ... ``` : d'abord la classe source, ensuite la classe de test JUnit 5 (avec Mockito).";
         systemPrompt = appendRagContext(systemPrompt, userMessage);
 
@@ -126,11 +126,11 @@ public class AsyncMigrationRetryService {
             additionalInstructions = "Ceci est une correction d'une tentative précédente. Suis STRICTEMENT les instructions suivantes : " + customPrompt;
         }
 
-        String response = aiService.analyzeAndRefactor(systemPrompt, Map.of(), userMessage, additionalInstructions);
+        String response = aiService.analyzeAndRefactor(systemPrompt, Map.of(), userMessage, additionalInstructions, llmModel);
         saveFilesAndComplete(status, response);
     }
 
-    private void processLargeFile(MigrationFileStatus status, String userMessage, String customPrompt) throws Exception {
+    private void processLargeFile(MigrationFileStatus status, String userMessage, String customPrompt, String llmModel) throws Exception {
         log.info("Processing large file with chunking strategy: {}", status.getSourceFile());
 
         // Prepare chunks
@@ -168,7 +168,7 @@ public class AsyncMigrationRetryService {
 
         skeletonPrompt += resolveContextFiles(status.getContextFiles());
 
-        String skeletonResponse = aiService.analyzeAndRefactor(skeletonPrompt, Map.of(), classStructure, customPrompt);
+        String skeletonResponse = aiService.analyzeAndRefactor(skeletonPrompt, Map.of(), classStructure, customPrompt, llmModel);
         String targetSkeleton = extractCodeBlock(skeletonResponse);
 
         structureChunk.setConvertedCode(targetSkeleton);
@@ -185,7 +185,7 @@ public class AsyncMigrationRetryService {
             String methodPrompt = "Convertis uniquement cette méthode en utilisant l'API Spring Data, sachant qu'elle appartient à la classe cible dont le squelette est :\n" + targetSkeleton + "\n\nNe renvoie QUE la méthode convertie dans un bloc ```java ... ```. N'inclus pas la classe entière.";
             methodPrompt += resolveContextFiles(status.getContextFiles());
 
-            String methodResponse = aiService.analyzeAndRefactor(methodPrompt, Map.of(), chunk.getOriginalCode(), customPrompt);
+            String methodResponse = aiService.analyzeAndRefactor(methodPrompt, Map.of(), chunk.getOriginalCode(), customPrompt, llmModel);
 
             chunk.setConvertedCode(extractCodeBlock(methodResponse));
             chunk.setStatus(ChunkStatus.SUCCESS);
@@ -214,7 +214,7 @@ public class AsyncMigrationRetryService {
 
         // Generate Test for final reassembled code
         String testPrompt = "Génère une classe de test JUnit 5 avec Mockito pour le code Spring Boot suivant. Fournis uniquement le code dans un bloc ```java ... ```.";
-        String testResponse = aiService.analyzeAndRefactor(testPrompt, Map.of(), finalSourceCode, customPrompt);
+        String testResponse = aiService.analyzeAndRefactor(testPrompt, Map.of(), finalSourceCode, customPrompt, llmModel);
         String finalTestCode = extractCodeBlock(testResponse);
 
         // Format final response to match processStandardFile expectations

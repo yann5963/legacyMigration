@@ -7,7 +7,10 @@ import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.chat.prompt.SystemPromptTemplate;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.ollama.api.OllamaOptions;
 import org.springframework.stereotype.Service;
+import com.migration.repository.ProjectConfigurationRepository;
+import com.migration.model.ProjectConfiguration;
 
 import java.util.List;
 import java.util.Map;
@@ -21,6 +24,7 @@ import java.util.Map;
 public class MigrationAiService {
 
     private final ChatClient chatClient;
+    private final ProjectConfigurationRepository projectConfigRepository;
 
     /**
      * Méthode générique pour interroger le LLM avec un contexte et une requête.
@@ -31,7 +35,7 @@ public class MigrationAiService {
      * @return La réponse générée par le LLM.
      */
     public String analyzeAndRefactor(String systemPromptTemplate, Map<String, Object> systemParams, String userMessage) {
-        return analyzeAndRefactor(systemPromptTemplate, systemParams, userMessage, null);
+        return analyzeAndRefactor(systemPromptTemplate, systemParams, userMessage, null, null);
     }
 
     /**
@@ -43,7 +47,7 @@ public class MigrationAiService {
      * @param additionalInstructions Instructions complémentaires pour le LLM.
      * @return La réponse générée par le LLM.
      */
-    public String analyzeAndRefactor(String systemPromptTemplate, Map<String, Object> systemParams, String userMessage, String additionalInstructions) {
+    public String analyzeAndRefactor(String systemPromptTemplate, Map<String, Object> systemParams, String userMessage, String additionalInstructions, String model) {
         log.debug("Appel au LLM pour refactoring...");
 
         String finalPromptTemplate = systemPromptTemplate;
@@ -54,7 +58,21 @@ public class MigrationAiService {
         Message systemMessage = promptTemplate.createMessage(systemParams);
         UserMessage userMsg = new UserMessage(userMessage);
 
-        Prompt prompt = new Prompt(List.of(systemMessage, userMsg));
+        String modelToUse = model;
+        if (modelToUse == null || modelToUse.trim().isEmpty()) {
+            ProjectConfiguration config = projectConfigRepository.findById(1L).orElse(null);
+            if (config != null && config.getDefaultLlmModel() != null && !config.getDefaultLlmModel().isEmpty()) {
+                modelToUse = config.getDefaultLlmModel();
+            }
+        }
+
+        Prompt prompt;
+        if (modelToUse != null && !modelToUse.trim().isEmpty()) {
+            OllamaOptions options = OllamaOptions.create().withModel(modelToUse);
+            prompt = new Prompt(List.of(systemMessage, userMsg), options);
+        } else {
+            prompt = new Prompt(List.of(systemMessage, userMsg));
+        }
 
         // Dans une implémentation complète, nous pourrions configurer les Function Calls ici.
         String response = chatClient.call(prompt).getResult().getOutput().getContent();
