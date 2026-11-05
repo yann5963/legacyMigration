@@ -34,6 +34,12 @@ spring:
 
 # Configuration spécifique à l'outil de migration
 migration:
+  ai:
+    available-models:
+      - llama3.2:3b
+      - granite4.1:3b
+      - qwen3:4b
+
   source:
     # URL JDBC pour la base Informix
     informix-url: jdbc:informix-sqli://localhost:9088/legacy_db:INFORMIXSERVER=informix;USER=informix;PASSWORD=informix_password

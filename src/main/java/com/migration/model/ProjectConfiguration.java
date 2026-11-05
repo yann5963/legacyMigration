@@ -24,4 +24,6 @@ public class ProjectConfiguration {
     private String targetProjectPath;
     private String targetBaseDir;
     private String targetBasePackage;
+
+    private String defaultLlmModel;
 }

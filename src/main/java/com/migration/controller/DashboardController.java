@@ -33,7 +33,7 @@ public class DashboardController {
 
     @PostMapping("/{id}/convert")
     public ResponseEntity<Void> convertMigration(@PathVariable Long id) {
-        retryService.convertFile(id, null, null);
+        retryService.convertFile(id, null, null, null);
         return ResponseEntity.accepted().build();
     }
 
@@ -102,7 +102,8 @@ public class DashboardController {
     public ResponseEntity<Void> retryMigration(@PathVariable Long id, @RequestBody(required = false) RetryRequest request) {
         String customPrompt = (request != null) ? request.getCustomPrompt() : null;
         List<com.migration.dto.ContextReferenceDto> contextFiles = (request != null) ? request.getContextFiles() : null;
-        retryService.convertFile(id, customPrompt, contextFiles);
+        String llmModel = (request != null) ? request.getLlmModel() : null;
+        retryService.convertFile(id, customPrompt, contextFiles, llmModel);
         return ResponseEntity.accepted().build();
     }
 }
