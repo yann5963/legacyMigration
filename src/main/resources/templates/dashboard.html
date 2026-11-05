@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en" xmlns:th="http://www.thymeleaf.org">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,331 +8,345 @@
     <!-- Bootstrap CSS for styling -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        .badge-SCANNED { background-color: #6c757d; }
-        .badge-CONVERTING { background-color: #0dcaf0; color: #000; }
-        .badge-NEEDS_REVIEW { background-color: #ffc107; color: #000; }
-        .badge-VALIDATED { background-color: #198754; }
-        .badge-ERROR { background-color: #dc3545; }
-        pre { background-color: #f8f9fa; padding: 15px; border: 1px solid #dee2e6; border-radius: 5px; }
+        .badge-SCANNED {
+            background-color: #6c757d;
+        }
+
+        .badge-CONVERTING {
+            background-color: #0dcaf0;
+            color: #000;
+        }
+
+        .badge-NEEDS_REVIEW {
+            background-color: #ffc107;
+            color: #000;
+        }
+
+        .badge-VALIDATED {
+            background-color: #198754;
+        }
+
+        .badge-ERROR {
+            background-color: #dc3545;
+        }
+
+        pre {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+        }
     </style>
 </head>
+
 <body>
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="/dashboard">Migration Tool</a>
-        <div class="collapse navbar-collapse">
-            <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-                <li class="nav-item"><a class="nav-link active" href="/dashboard">Dashboard</a></li>
-                <li class="nav-item"><a class="nav-link" href="/configuration">Configuration</a></li>
-            </ul>
-        </div>
-    </div>
-</nav>
-
-<div class="container mt-4">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1>Dashboard de Migration (Manuel)</h1>
-        <a href="/configuration" class="btn btn-primary">Configurer le Projet & Scanner</a>
-    </div>
-
-    <ul class="nav nav-tabs mb-3" id="fileTypeTabs" role="tablist">
-        <li class="nav-item" role="presentation">
-            <button class="nav-link active" id="tab-all" data-bs-toggle="tab" type="button" role="tab">Tous</button>
-        </li>
-    </ul>
-
-    <div class="table-responsive">
-        <table class="table table-bordered table-striped">
-            <thead class="table-dark">
-            <tr>
-                <th>Type</th>
-                <th>Couche</th>
-                <th>Fichier (Chemin absolu)</th>
-                <th>Fichier(s) Sortant(s)</th>
-                <th>Statut</th>
-                <th>Actions</th>
-            </tr>
-            </thead>
-            <tbody id="migrationTableBody">
-            <!-- Rows will be populated by JavaScript -->
-            </tbody>
-        </table>
-    </div>
-</div>
-
-<!-- Modal for Initial Conversion -->
-<div class="modal fade" id="convertModal" tabindex="-1" aria-labelledby="convertModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="convertModalLabel">Convertir: <span id="convertModalFileName"></span></h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <form id="convertForm">
-                    <input type="hidden" id="convertModalFileId">
-                    <h6>Fichiers de contexte</h6>
-                    <div id="convertContextFilesList" class="mb-3">
-                        <!-- Dynamically populated list of context files -->
-                    </div>
-                    <div class="input-group mb-3">
-                        <input type="text" class="form-control" id="convertManualContextFile" list="fileList" placeholder="Chercher un fichier à ajouter...">
-                        <button class="btn btn-outline-secondary" type="button" onclick="addManualContextFile('convert')">Ajouter</button>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
-                <button type="button" class="btn btn-primary" onclick="submitConvert()">Convertir</button>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/dashboard">Migration Tool</a>
+            <div class="collapse navbar-collapse">
+                <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+                    <li class="nav-item"><a class="nav-link active" href="/dashboard">Dashboard</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/configuration">Configuration</a></li>
+                </ul>
             </div>
         </div>
-    </div>
-</div>
+    </nav>
 
-<!-- Modal for Retrying -->
-<div class="modal fade" id="retryModal" tabindex="-1" aria-labelledby="retryModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="retryModalLabel">Ajuster avec l'IA: <span id="modalFileName"></span></h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <form id="retryForm">
-                    <input type="hidden" id="modalFileId">
-                    <div class="mb-3">
-                        <label for="retryLlmModel" class="form-label">Modèle LLM pour cette action</label>
-                        <select class="form-select" id="retryLlmModel">
-                            <option value="">(Modèle par défaut)</option>
-                            <!-- Populated via JS -->
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <label for="customPrompt" class="form-label">Instructions complémentaires pour l'IA</label>
-                        <textarea class="form-control" id="customPrompt" rows="4"></textarea>
-                    </div>
-                    <hr>
-                    <h6>Fichiers de contexte</h6>
-                    <div id="contextFilesList" class="mb-3">
-                        <!-- Dynamically populated list of context files -->
-                    </div>
-                    <div class="input-group mb-3">
-                        <input type="text" class="form-control" id="retryManualContextFile" list="fileList" placeholder="Chercher un fichier à ajouter...">
-                        <button class="btn btn-outline-secondary" type="button" onclick="addManualContextFile('retry')">Ajouter</button>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
-                <button type="button" class="btn btn-primary" onclick="submitRetry()">Relancer la conversion</button>
+    <div class="container mt-4">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>Dashboard de Migration (Manuel)</h1>
+            <a href="/configuration" class="btn btn-primary">Configurer le Projet & Scanner</a>
+        </div>
+
+        <ul class="nav nav-tabs mb-3" id="fileTypeTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="tab-all" data-bs-toggle="tab" type="button" role="tab">Tous</button>
+            </li>
+        </ul>
+
+        <div class="table-responsive">
+            <table class="table table-bordered table-striped">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Type</th>
+                        <th>Couche</th>
+                        <th>Fichier (Chemin absolu)</th>
+                        <th>Fichier(s) Sortant(s)</th>
+                        <th>Statut</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="migrationTableBody">
+                    <!-- Rows will be populated by JavaScript -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Modal for Initial Conversion -->
+    <div class="modal fade" id="convertModal" tabindex="-1" aria-labelledby="convertModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="convertModalLabel">Convertir: <span id="convertModalFileName"></span>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="convertForm">
+                        <input type="hidden" id="convertModalFileId">
+                        <h6>Fichiers de contexte</h6>
+                        <div id="convertContextFilesList" class="mb-3">
+                            <!-- Dynamically populated list of context files -->
+                        </div>
+                        <div class="input-group mb-3">
+                            <input type="text" class="form-control" id="convertManualContextFile" list="fileList"
+                                placeholder="Chercher un fichier à ajouter...">
+                            <button class="btn btn-outline-secondary" type="button"
+                                onclick="addManualContextFile('convert')">Ajouter</button>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="button" class="btn btn-primary" onclick="submitConvert()">Convertir</button>
+                </div>
             </div>
         </div>
     </div>
-</div>
 
-<!-- Modal for Viewing Original Source -->
-<div class="modal fade modal-xl" id="sourceModal" tabindex="-1" aria-labelledby="sourceModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="sourceModalLabel">Code Source Original</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <pre><code id="onlyOriginalCodeBlock"></code></pre>
+    <!-- Modal for Retrying -->
+    <div class="modal fade" id="retryModal" tabindex="-1" aria-labelledby="retryModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="retryModalLabel">Ajuster avec l'IA: <span id="modalFileName"></span>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="retryForm">
+                        <input type="hidden" id="modalFileId">
+                        <div class="mb-3">
+                            <label for="customPrompt" class="form-label">Instructions complémentaires pour l'IA</label>
+                            <textarea class="form-control" id="customPrompt" rows="4"></textarea>
+                        </div>
+                        <hr>
+                        <h6>Fichiers de contexte</h6>
+                        <div id="contextFilesList" class="mb-3">
+                            <!-- Dynamically populated list of context files -->
+                        </div>
+                        <div class="input-group mb-3">
+                            <input type="text" class="form-control" id="retryManualContextFile" list="fileList"
+                                placeholder="Chercher un fichier à ajouter...">
+                            <button class="btn btn-outline-secondary" type="button"
+                                onclick="addManualContextFile('retry')">Ajouter</button>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="button" class="btn btn-primary" onclick="submitRetry()">Relancer la
+                        conversion</button>
+                </div>
             </div>
         </div>
     </div>
-</div>
 
-<!-- Modal for Viewing Code -->
-<div class="modal fade modal-xl" id="codeModal" tabindex="-1" aria-labelledby="codeModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="codeModalLabel">Aperçu du Code Généré</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+    <!-- Modal for Viewing Original Source -->
+    <div class="modal fade modal-xl" id="sourceModal" tabindex="-1" aria-labelledby="sourceModalLabel"
+        aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="sourceModalLabel">Code Source Original</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <pre><code id="onlyOriginalCodeBlock"></code></pre>
+                </div>
             </div>
-            <div class="modal-body">
-                <div class="row">
-                    <div class="col-md-6">
-                        <h6>Code d'origine</h6>
-                        <pre><code id="originalCodeBlock"></code></pre>
-                    </div>
-                    <div class="col-md-6">
-                        <ul class="nav nav-tabs" id="codeTabs" role="tablist">
-                            <li class="nav-item" role="presentation">
-                                <button class="nav-link active" id="source-tab" data-bs-toggle="tab" data-bs-target="#source-pane" type="button" role="tab">Code Source Métier</button>
-                            </li>
-                            <li class="nav-item" role="presentation">
-                                <button class="nav-link" id="test-tab" data-bs-toggle="tab" data-bs-target="#test-pane" type="button" role="tab">Test Unitaire (JUnit 5)</button>
-                            </li>
-                        </ul>
-                        <div class="tab-content mt-3" id="codeTabsContent">
-                            <div class="tab-pane fade show active" id="source-pane" role="tabpanel"><pre><code id="sourceCodeBlock"></code></pre></div>
-                            <div class="tab-pane fade" id="test-pane" role="tabpanel"><pre><code id="testCodeBlock"></code></pre></div>
+        </div>
+    </div>
+
+    <!-- Modal for Viewing Code -->
+    <div class="modal fade modal-xl" id="codeModal" tabindex="-1" aria-labelledby="codeModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="codeModalLabel">Aperçu du Code Généré</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>Code d'origine</h6>
+                            <pre><code id="originalCodeBlock"></code></pre>
+                        </div>
+                        <div class="col-md-6">
+                            <ul class="nav nav-tabs" id="codeTabs" role="tablist">
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link active" id="source-tab" data-bs-toggle="tab"
+                                        data-bs-target="#source-pane" type="button" role="tab">Code Source
+                                        Métier</button>
+                                </li>
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link" id="test-tab" data-bs-toggle="tab"
+                                        data-bs-target="#test-pane" type="button" role="tab">Test Unitaire (JUnit
+                                        5)</button>
+                                </li>
+                            </ul>
+                            <div class="tab-content mt-3" id="codeTabsContent">
+                                <div class="tab-pane fade show active" id="source-pane" role="tabpanel">
+                                    <pre><code id="sourceCodeBlock"></code></pre>
+                                </div>
+                                <div class="tab-pane fade" id="test-pane" role="tabpanel">
+                                    <pre><code id="testCodeBlock"></code></pre>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
-</div>
 
-<!-- Bootstrap Bundle JS -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Bootstrap Bundle JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
-<datalist id="fileList"></datalist>
+    <datalist id="fileList"></datalist>
 
-<script>
-    let convertModal;
-    let retryModal;
-    let codeModal;
-    let sourceModal;
-    let fileDataMap = new Map();
-    let allMigrationData = [];
-    let currentFilterType = 'ALL';
-    let availableModels = [];
+    <script>
+        let convertModal;
+        let retryModal;
+        let codeModal;
+        let sourceModal;
+        let fileDataMap = new Map();
+        let allMigrationData = [];
+        let currentFilterType = 'ALL';
 
-    document.addEventListener("DOMContentLoaded", function() {
-        convertModal = new bootstrap.Modal(document.getElementById('convertModal'));
-        retryModal = new bootstrap.Modal(document.getElementById('retryModal'));
-        codeModal = new bootstrap.Modal(document.getElementById('codeModal'));
-        sourceModal = new bootstrap.Modal(document.getElementById('sourceModal'));
-
-        fetch('/api/configuration/models')
-            .then(response => response.json())
-            .then(models => {
-                availableModels = models;
-                const modelSelect = document.getElementById('retryLlmModel');
-                if (models && models.length > 0) {
-                    models.forEach(model => {
-                        const option = document.createElement('option');
-                        option.value = model;
-                        option.textContent = model;
-                        modelSelect.appendChild(option);
-                    });
-                }
-            })
-            .catch(error => console.error('Error fetching models:', error));
-
-        fetchData();
-        setInterval(fetchData, 3000); // Polling every 3 seconds
-    });
-
-    function fetchData() {
-        fetch('/api/migration/files')
-            .then(response => response.json())
-            .then(data => {
-                allMigrationData = data;
-                updateTabs();
-                renderTable();
-            })
-            .catch(error => console.error('Error fetching data:', error));
-    }
-
-    function updateTabs() {
-        const tabsContainer = document.getElementById('fileTypeTabs');
-        if (!tabsContainer) return;
-
-        const types = Array.from(new Set(allMigrationData.map(f => f.fileType).filter(t => t))).sort();
-
-        document.querySelectorAll('.dynamic-tab').forEach(e => e.remove());
-
-        types.forEach(type => {
-            const li = document.createElement('li');
-            li.className = 'nav-item dynamic-tab';
-            li.setAttribute('role', 'presentation');
-
-            const btn = document.createElement('button');
-            btn.className = `nav-link ${currentFilterType === type ? 'active' : ''}`;
-            btn.setAttribute('data-bs-toggle', 'tab');
-            btn.setAttribute('type', 'button');
-            btn.setAttribute('role', 'tab');
-            btn.textContent = type;
-            btn.onclick = () => {
-                currentFilterType = type;
-                renderTable();
-
-                // Update active state of tabs
-                document.querySelectorAll('#fileTypeTabs .nav-link').forEach(el => el.classList.remove('active'));
-                btn.classList.add('active');
-            };
-
-            li.appendChild(btn);
-            tabsContainer.appendChild(li);
+        document.addEventListener("DOMContentLoaded", function () {
+            convertModal = new bootstrap.Modal(document.getElementById('convertModal'));
+            retryModal = new bootstrap.Modal(document.getElementById('retryModal'));
+            codeModal = new bootstrap.Modal(document.getElementById('codeModal'));
+            sourceModal = new bootstrap.Modal(document.getElementById('sourceModal'));
+            fetchData();
+            setInterval(fetchData, 15000); // Polling every 3 seconds
         });
 
-        const tabAllBtn = document.getElementById('tab-all');
-        if (tabAllBtn) {
-            tabAllBtn.className = `nav-link ${currentFilterType === 'ALL' ? 'active' : ''}`;
-            tabAllBtn.onclick = () => {
-                currentFilterType = 'ALL';
-                renderTable();
-
-                // Update active state of tabs
-                document.querySelectorAll('#fileTypeTabs .nav-link').forEach(el => el.classList.remove('active'));
-                tabAllBtn.classList.add('active');
-            };
-        }
-    }
-
-    function renderTable() {
-        const tbody = document.getElementById('migrationTableBody');
-        tbody.innerHTML = ''; // Clear current content
-
-        let data = allMigrationData;
-
-        // Calculate unvalidated dependencies warning (based on all data)
-        const isLayerValidated = (layer) => allMigrationData.filter(f => f.layer === layer).every(f => f.status === 'VALIDATED');
-
-        if (currentFilterType !== 'ALL') {
-            data = data.filter(f => f.fileType === currentFilterType);
+        function fetchData() {
+            fetch('/api/migration/files')
+                .then(response => response.json())
+                .then(data => {
+                    allMigrationData = data;
+                    updateTabs();
+                    renderTable();
+                })
+                .catch(error => console.error('Error fetching data:', error));
         }
 
-        // Sort by layer
-        data.sort((a, b) => (a.layer || 1) - (b.layer || 1));
+        function updateTabs() {
+            const tabsContainer = document.getElementById('fileTypeTabs');
+            if (!tabsContainer) return;
 
-        data.forEach(file => {
-            fileDataMap.set(file.id, file);
-            const targetFilesStr = file.targetFiles ? file.targetFiles.join(', ') : '';
-            let errorMessageHtml = '';
-            if (file.status === 'ERROR' && file.errorMessage) {
-                 errorMessageHtml = `<br><small class="text-danger">${file.errorMessage}</small>`;
+            const types = Array.from(new Set(allMigrationData.map(f => f.fileType).filter(t => t))).sort();
+
+            document.querySelectorAll('.dynamic-tab').forEach(e => e.remove());
+
+            types.forEach(type => {
+                const li = document.createElement('li');
+                li.className = 'nav-item dynamic-tab';
+                li.setAttribute('role', 'presentation');
+
+                const btn = document.createElement('button');
+                btn.className = `nav-link ${currentFilterType === type ? 'active' : ''}`;
+                btn.setAttribute('data-bs-toggle', 'tab');
+                btn.setAttribute('type', 'button');
+                btn.setAttribute('role', 'tab');
+                btn.textContent = type;
+                btn.onclick = () => {
+                    currentFilterType = type;
+                    renderTable();
+
+                    // Update active state of tabs
+                    document.querySelectorAll('#fileTypeTabs .nav-link').forEach(el => el.classList.remove('active'));
+                    btn.classList.add('active');
+                };
+
+                li.appendChild(btn);
+                tabsContainer.appendChild(li);
+            });
+
+            const tabAllBtn = document.getElementById('tab-all');
+            if (tabAllBtn) {
+                tabAllBtn.className = `nav-link ${currentFilterType === 'ALL' ? 'active' : ''}`;
+                tabAllBtn.onclick = () => {
+                    currentFilterType = 'ALL';
+                    renderTable();
+
+                    // Update active state of tabs
+                    document.querySelectorAll('#fileTypeTabs .nav-link').forEach(el => el.classList.remove('active'));
+                    tabAllBtn.classList.add('active');
+                };
+            }
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('migrationTableBody');
+            tbody.innerHTML = ''; // Clear current content
+
+            let data = allMigrationData;
+
+            // Calculate unvalidated dependencies warning (based on all data)
+            const isLayerValidated = (layer) => allMigrationData.filter(f => f.layer === layer).every(f => f.status === 'VALIDATED');
+
+            if (currentFilterType !== 'ALL') {
+                data = data.filter(f => f.fileType === currentFilterType);
             }
 
-            // Dependency warning check (if layer > 1 and lower layers are not all validated)
-            let warningClass = '';
-            let isBlocked = false;
-            if (file.layer > 1 && file.status === 'SCANNED') {
-                for(let l = 1; l < file.layer; l++) {
-                    if (!isLayerValidated(l)) {
-                        isBlocked = true;
-                        warningClass = 'table-warning';
-                        errorMessageHtml += `<br><small class="text-warning">En attente de la Couche ${l}</small>`;
-                        break;
+            // Sort by layer
+            data.sort((a, b) => (a.layer || 1) - (b.layer || 1));
+
+            data.forEach(file => {
+                fileDataMap.set(file.id, file);
+                const targetFilesStr = file.targetFiles ? file.targetFiles.join(', ') : '';
+                let errorMessageHtml = '';
+                if (file.status === 'ERROR' && file.errorMessage) {
+                    errorMessageHtml = `<br><small class="text-danger">${file.errorMessage}</small>`;
+                }
+
+                // Dependency warning check (if layer > 1 and lower layers are not all validated)
+                let warningClass = '';
+                let isBlocked = false;
+                if (file.layer > 1 && file.status === 'SCANNED') {
+                    for (let l = 1; l < file.layer; l++) {
+                        if (!isLayerValidated(l)) {
+                            isBlocked = true;
+                            warningClass = 'table-warning';
+                            errorMessageHtml += `<br><small class="text-warning">En attente de la Couche ${l}</small>`;
+                            break;
+                        }
                     }
                 }
-            }
 
-            let chunkProgressHtml = "";
+                let chunkProgressHtml = "";
 
-            if (file.chunks && file.chunks.length > 0) {
+                if (file.chunks && file.chunks.length > 0) {
 
-                let total = file.chunks.length;
+                    let total = file.chunks.length;
 
-                let converted = file.chunks.filter(c => c.status === "SUCCESS").length;
+                    let converted = file.chunks.filter(c => c.status === "SUCCESS").length;
 
-                if (file.status === "CONVERTING" || file.status === "ERROR" || file.status === "NEEDS_REVIEW") {
+                    if (file.status === "CONVERTING" || file.status === "ERROR" || file.status === "NEEDS_REVIEW") {
 
-                    chunkProgressHtml = `<br><small class="text-info">EN COURS (${converted}/${total} chunks convertis)</small>`;
+                        chunkProgressHtml = `<br><small class="text-info">EN COURS (${converted}/${total} chunks convertis)</small>`;
+
+                    }
 
                 }
-
-            }
-            let actionsHtml = '';
-            if (file.status === 'SCANNED' || file.status === 'ERROR') {
-                actionsHtml = `
+                let actionsHtml = '';
+                if (file.status === 'SCANNED' || file.status === 'ERROR') {
+                    actionsHtml = `
                     <div class="btn-group me-1">
                         <button class="btn btn-sm btn-primary" ${isBlocked ? 'disabled' : ''} onclick="convertFile(${file.id})">Convertir</button>
                         <button type="button" class="btn btn-sm btn-primary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false" ${isBlocked ? 'disabled' : ''}>
@@ -343,17 +358,17 @@
                     </div>
                     <button class="btn btn-sm btn-warning" onclick="openRetryModal(${file.id}, '${file.sourceFile}')">Ajuster avec l'IA</button>
                 `;
-            } else if (file.status === 'NEEDS_REVIEW') {
-                actionsHtml = `
+                } else if (file.status === 'NEEDS_REVIEW') {
+                    actionsHtml = `
                     <button class="btn btn-sm btn-info me-1" onclick="viewCode(${file.id})">Voir le code</button>
                     <button class="btn btn-sm btn-success me-1" onclick="validateFile(${file.id})">Valider</button>
                     <button class="btn btn-sm btn-warning" onclick="openRetryModal(${file.id}, '${file.sourceFile}')">Ajuster avec l'IA</button>
                 `;
-            } else if (file.status === 'VALIDATED') {
-                actionsHtml = `<span class="text-success">✔ Validé</span>`;
-            }
+                } else if (file.status === 'VALIDATED') {
+                    actionsHtml = `<span class="text-success">✔ Validé</span>`;
+                }
 
-            const row = `<tr class="${warningClass}">
+                const row = `<tr class="${warningClass}">
                 <td>
                     <span class="badge bg-secondary">${file.fileType}</span>
                     <br><button class="btn btn-sm btn-outline-info mt-1" onclick="viewOriginalSource(${file.id})">Voir source</button>
@@ -368,86 +383,85 @@
                 </td>
                 <td>${actionsHtml}</td>
             </tr>`;
-            tbody.innerHTML += row;
-        });
-    }
-
-    function convertFile(id) {
-        fetch(`/api/migration/files/${id}/convert`, { method: 'POST' })
-        .then(response => {
-            if (response.ok) fetchData();
-            else alert("Erreur lors de la demande de conversion.");
-        })
-        .catch(error => console.error('Error converting:', error));
-    }
-
-    function validateFile(id) {
-        fetch(`/api/migration/files/${id}/validate`, { method: 'POST' })
-        .then(response => {
-            if (response.ok) fetchData();
-            else alert("Erreur lors de la validation.");
-        })
-        .catch(error => console.error('Error validating:', error));
-    }
-
-    function openRetryModal(id, sourceFile) {
-        document.getElementById('modalFileId').value = id;
-        document.getElementById('modalFileName').textContent = sourceFile;
-        const file = fileDataMap.get(id);
-        document.getElementById('customPrompt').value = (file && file.lastCustomPrompt) ? file.lastCustomPrompt : '';
-        document.getElementById('retryLlmModel').value = ''; // Reset to default
-
-        // Populate context files
-        const contextFilesList = document.getElementById('contextFilesList');
-        contextFilesList.innerHTML = '';
-        if (file && file.contextFiles) {
-            file.contextFiles.forEach((cf, index) => {
-                appendContextFileHtml(cf.filePath, cf.mode, index, 'contextFilesList');
+                tbody.innerHTML += row;
             });
         }
 
-        populateDatalist();
+        function convertFile(id) {
+            fetch(`/api/migration/files/${id}/convert`, { method: 'POST' })
+                .then(response => {
+                    if (response.ok) fetchData();
+                    else alert("Erreur lors de la demande de conversion.");
+                })
+                .catch(error => console.error('Error converting:', error));
+        }
 
-        retryModal.show();
-    }
+        function validateFile(id) {
+            fetch(`/api/migration/files/${id}/validate`, { method: 'POST' })
+                .then(response => {
+                    if (response.ok) fetchData();
+                    else alert("Erreur lors de la validation.");
+                })
+                .catch(error => console.error('Error validating:', error));
+        }
 
-    function openConvertModal(id, sourceFile) {
-        document.getElementById('convertModalFileId').value = id;
-        document.getElementById('convertModalFileName').textContent = sourceFile;
-        const file = fileDataMap.get(id);
+        function openRetryModal(id, sourceFile) {
+            document.getElementById('modalFileId').value = id;
+            document.getElementById('modalFileName').textContent = sourceFile;
+            const file = fileDataMap.get(id);
+            document.getElementById('customPrompt').value = (file && file.lastCustomPrompt) ? file.lastCustomPrompt : '';
 
-        // Populate context files
-        const contextFilesList = document.getElementById('convertContextFilesList');
-        contextFilesList.innerHTML = '';
-        if (file && file.contextFiles) {
-            file.contextFiles.forEach((cf, index) => {
-                appendContextFileHtml(cf.filePath, cf.mode, index, 'convertContextFilesList');
+            // Populate context files
+            const contextFilesList = document.getElementById('contextFilesList');
+            contextFilesList.innerHTML = '';
+            if (file && file.contextFiles) {
+                file.contextFiles.forEach((cf, index) => {
+                    appendContextFileHtml(cf.filePath, cf.mode, index, 'contextFilesList');
+                });
+            }
+
+            populateDatalist();
+
+            retryModal.show();
+        }
+
+        function openConvertModal(id, sourceFile) {
+            document.getElementById('convertModalFileId').value = id;
+            document.getElementById('convertModalFileName').textContent = sourceFile;
+            const file = fileDataMap.get(id);
+
+            // Populate context files
+            const contextFilesList = document.getElementById('convertContextFilesList');
+            contextFilesList.innerHTML = '';
+            if (file && file.contextFiles) {
+                file.contextFiles.forEach((cf, index) => {
+                    appendContextFileHtml(cf.filePath, cf.mode, index, 'convertContextFilesList');
+                });
+            }
+
+            populateDatalist();
+
+            convertModal.show();
+        }
+
+        function populateDatalist() {
+            const datalist = document.getElementById('fileList');
+            datalist.innerHTML = '';
+            allMigrationData.forEach(f => {
+                const option = document.createElement('option');
+                option.value = f.absolutePath;
+                datalist.appendChild(option);
             });
         }
 
-        populateDatalist();
+        let contextFileIndex = 1000;
 
-        convertModal.show();
-    }
+        function appendContextFileHtml(filePath, mode, index, containerId = 'contextFilesList') {
+            const contextFilesList = document.getElementById(containerId);
+            const isFull = mode === 'FULL' ? 'selected' : '';
+            const isSignature = mode === 'SIGNATURE_ONLY' ? 'selected' : '';
 
-    function populateDatalist() {
-        const datalist = document.getElementById('fileList');
-        datalist.innerHTML = '';
-        allMigrationData.forEach(f => {
-            const option = document.createElement('option');
-            option.value = f.absolutePath;
-            datalist.appendChild(option);
-        });
-    }
-
-    let contextFileIndex = 1000;
-
-    function appendContextFileHtml(filePath, mode, index, containerId = 'contextFilesList') {
-        const contextFilesList = document.getElementById(containerId);
-        const isFull = mode === 'FULL' ? 'selected' : '';
-        const isSignature = mode === 'SIGNATURE_ONLY' ? 'selected' : '';
-
-        const html = `
+            const html = `
             <div class="row mb-2 align-items-center context-file-item" data-index="${index}">
                 <div class="col-sm-1">
                     <input type="checkbox" class="form-check-input context-file-checkbox" checked>
@@ -464,106 +478,106 @@
                 </div>
             </div>
         `;
-        contextFilesList.insertAdjacentHTML('beforeend', html);
-    }
-
-    function addManualContextFile(type) {
-        const inputId = type === 'convert' ? 'convertManualContextFile' : 'retryManualContextFile';
-        const listId = type === 'convert' ? 'convertContextFilesList' : 'contextFilesList';
-        const input = document.getElementById(inputId);
-        const filePath = input.value.trim();
-        if (filePath) {
-            appendContextFileHtml(filePath, 'SIGNATURE_ONLY', contextFileIndex++, listId);
-            input.value = '';
+            contextFilesList.insertAdjacentHTML('beforeend', html);
         }
-    }
 
-    function getContextFilesFromList(containerId) {
-        const contextFiles = [];
-        document.getElementById(containerId).querySelectorAll('.context-file-item').forEach(item => {
-            const isChecked = item.querySelector('.context-file-checkbox').checked;
-            if (isChecked) {
-                const filePath = item.querySelector('.context-file-path').value;
-                const mode = item.querySelector('.context-file-mode').value;
-                contextFiles.push({ filePath: filePath, mode: mode });
+        function addManualContextFile(type) {
+            const inputId = type === 'convert' ? 'convertManualContextFile' : 'retryManualContextFile';
+            const listId = type === 'convert' ? 'convertContextFilesList' : 'contextFilesList';
+            const input = document.getElementById(inputId);
+            const filePath = input.value.trim();
+            if (filePath) {
+                appendContextFileHtml(filePath, 'SIGNATURE_ONLY', contextFileIndex++, listId);
+                input.value = '';
             }
-        });
-        return contextFiles;
-    }
+        }
 
-    function submitConvert() {
-        const id = document.getElementById('convertModalFileId').value;
-        const contextFiles = getContextFilesFromList('convertContextFilesList');
-
-        fetch(`/api/migration/files/${id}/convert`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contextFiles: contextFiles })
-        })
-        .then(response => {
-            if (response.ok) {
-                convertModal.hide();
-                fetchData();
-            } else {
-                alert("Erreur lors de la conversion.");
-            }
-        })
-        .catch(error => {
-            console.error('Error converting:', error);
-            alert("Erreur réseau.");
-        });
-    }
-
-    function submitRetry() {
-        const id = document.getElementById('modalFileId').value;
-        const customPrompt = document.getElementById('customPrompt').value;
-        const contextFiles = getContextFilesFromList('contextFilesList');
-        const retryModel = document.getElementById('retryLlmModel').value;
-
-        fetch(`/api/migration/files/${id}/retry`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ customPrompt: customPrompt, contextFiles: contextFiles, llmModel: retryModel })
-        })
-        .then(response => {
-            if (response.ok) {
-                retryModal.hide();
-                fetchData();
-            } else {
-                alert("Erreur lors de la relance du traitement.");
-            }
-        })
-        .catch(error => {
-            console.error('Error retrying:', error);
-            alert("Erreur réseau.");
-        });
-    }
-
-    function viewCode(id) {
-        fetch(`/api/migration/files/${id}/content`)
-            .then(res => res.json())
-            .then(data => {
-                document.getElementById('originalCodeBlock').textContent = data.originalCode || 'Non généré.';
-                document.getElementById('sourceCodeBlock').textContent = data.sourceCode || 'Non généré.';
-                document.getElementById('testCodeBlock').textContent = data.testCode || 'Non généré.';
-                codeModal.show();
-            })
-            .catch(err => {
-                alert("Erreur lors de la récupération du code.");
+        function getContextFilesFromList(containerId) {
+            const contextFiles = [];
+            document.getElementById(containerId).querySelectorAll('.context-file-item').forEach(item => {
+                const isChecked = item.querySelector('.context-file-checkbox').checked;
+                if (isChecked) {
+                    const filePath = item.querySelector('.context-file-path').value;
+                    const mode = item.querySelector('.context-file-mode').value;
+                    contextFiles.push({ filePath: filePath, mode: mode });
+                }
             });
-    }
+            return contextFiles;
+        }
 
-    function viewOriginalSource(id) {
-        fetch(`/api/migration/files/${id}/content`)
-            .then(res => res.json())
-            .then(data => {
-                document.getElementById('onlyOriginalCodeBlock').textContent = data.originalCode || 'Non généré.';
-                sourceModal.show();
+        function submitConvert() {
+            const id = document.getElementById('convertModalFileId').value;
+            const contextFiles = getContextFilesFromList('convertContextFilesList');
+
+            fetch(`/api/migration/files/${id}/convert`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ contextFiles: contextFiles })
             })
-            .catch(err => {
-                alert("Erreur lors de la récupération du code source.");
-            });
-    }
-</script>
+                .then(response => {
+                    if (response.ok) {
+                        convertModal.hide();
+                        fetchData();
+                    } else {
+                        alert("Erreur lors de la conversion.");
+                    }
+                })
+                .catch(error => {
+                    console.error('Error converting:', error);
+                    alert("Erreur réseau.");
+                });
+        }
+
+        function submitRetry() {
+            const id = document.getElementById('modalFileId').value;
+            const customPrompt = document.getElementById('customPrompt').value;
+            const contextFiles = getContextFilesFromList('contextFilesList');
+
+            fetch(`/api/migration/files/${id}/retry`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ customPrompt: customPrompt, contextFiles: contextFiles })
+            })
+                .then(response => {
+                    if (response.ok) {
+                        retryModal.hide();
+                        fetchData();
+                    } else {
+                        alert("Erreur lors de la relance du traitement.");
+                    }
+                })
+                .catch(error => {
+                    console.error('Error retrying:', error);
+                    alert("Erreur réseau.");
+                });
+        }
+
+        function viewCode(id) {
+            fetch(`/api/migration/files/${id}/content`)
+                .then(res => res.json())
+                .then(data => {
+                    document.getElementById('originalCodeBlock').textContent = data.originalCode || 'Non généré.';
+                    document.getElementById('sourceCodeBlock').textContent = data.sourceCode || 'Non généré.';
+                    document.getElementById('testCodeBlock').textContent = data.testCode || 'Non généré.';
+                    codeModal.show();
+                })
+                .catch(err => {
+                    alert("Erreur lors de la récupération du code.");
+                });
+        }
+
+        function viewOriginalSource(id) {
+            fetch(`/api/migration/files/${id}/content`)
+                .then(res => res.json())
+                .then(data => {
+                    document.getElementById('onlyOriginalCodeBlock').textContent = data.originalCode || 'Non généré.';
+                    sourceModal.show();
+                })
+                .catch(err => {
+                    alert("Erreur lors de la récupération du code source.");
+                });
+        }
+    </script>
 </body>
+
 </html>
