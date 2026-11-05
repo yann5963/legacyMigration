@@ -2,10 +2,13 @@ package com.migration.controller;
 
 import com.migration.core.model.TargetProjectConfig;
 import com.migration.model.ProjectConfiguration;
+import com.migration.core.model.AiConfigProperties;
 import com.migration.repository.ProjectConfigurationRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/configuration")
@@ -14,6 +17,7 @@ public class ConfigurationController {
 
     private final ProjectConfigurationRepository repository;
     private final TargetProjectConfig targetProjectConfig;
+    private final AiConfigProperties aiConfigProperties;
 
     @GetMapping
     public ProjectConfiguration getConfiguration() {
@@ -36,5 +40,10 @@ public class ConfigurationController {
         config.setId(1L); // Ensure we only have one configuration record
         ProjectConfiguration savedConfig = repository.save(config);
         return ResponseEntity.ok(savedConfig);
+    }
+
+    @GetMapping("/models")
+    public List<String> getAvailableModels() {
+        return aiConfigProperties.getAvailableModels();
     }
 }

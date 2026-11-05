@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import com.migration.model.ProjectConfiguration;
 import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
 
@@ -26,6 +27,12 @@ public class ProjectController {
     @PostMapping("/scan")
     public ResponseEntity<Map<String, Integer>> scanProject(@RequestBody ScanRequest request) {
         initializerStep.execute();
+
+        projectConfigurationRepository.findById(1L).ifPresent(config -> {
+            config.setDefaultLlmModel(request.getDefaultLlmModel());
+            projectConfigurationRepository.save(config);
+        });
+
         int count = scannerService.scanProject(request.getSourceRootPath());
         return ResponseEntity.ok(Map.of("filesFound", count));
     }
