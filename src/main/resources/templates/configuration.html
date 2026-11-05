@@ -68,6 +68,12 @@
                     <label for="sourceRootPath" class="form-label">Chemin absolu du projet source (Legacy)</label>
                     <input type="text" class="form-control" id="sourceRootPath" placeholder="/chemin/vers/projet-legacy" required>
                 </div>
+                <div class="mb-3">
+                    <label for="defaultLlmModel" class="form-label">Modèle LLM par défaut</label>
+                    <select class="form-select" id="defaultLlmModel">
+                        <!-- Populated via JS -->
+                    </select>
+                </div>
                 <div class="d-flex gap-2">
                     <button type="button" class="btn btn-success" onclick="scanProject()" id="scanButton">Scanner le projet</button>
                     <button type="button" class="btn btn-danger" onclick="resetProject()">Réinitialiser le projet</button>
@@ -85,7 +91,23 @@
 
 <script>
     document.addEventListener("DOMContentLoaded", function() {
-        fetch('/api/configuration')
+        // Fetch models first to populate the dropdown
+        fetch('/api/configuration/models')
+            .then(response => response.json())
+            .then(models => {
+                const modelSelect = document.getElementById('defaultLlmModel');
+                if (models && models.length > 0) {
+                    models.forEach(model => {
+                        const option = document.createElement('option');
+                        option.value = model;
+                        option.textContent = model;
+                        modelSelect.appendChild(option);
+                    });
+                }
+
+                // Then fetch configuration to select the saved model
+                return fetch('/api/configuration');
+            })
             .then(response => response.json())
             .then(data => {
                 if (data) {
@@ -99,10 +121,14 @@
                         projectPathInput.value = data.targetProjectPath || "";
                     }
 
+                    if (data.defaultLlmModel) {
+                        document.getElementById('defaultLlmModel').value = data.defaultLlmModel;
+                    }
+
                     checkProjectPath();
                 }
             })
-            .catch(error => console.error('Error fetching config:', error));
+            .catch(error => console.error('Error fetching config/models:', error));
 
         const targetProjectPathInput = document.getElementById('targetProjectPath');
         if (targetProjectPathInput) {
@@ -160,10 +186,12 @@
         btn.disabled = true;
         btn.textContent = "Scan en cours...";
 
+        const model = document.getElementById('defaultLlmModel').value;
+
         fetch('/api/project/scan', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sourceRootPath: path })
+            body: JSON.stringify({ sourceRootPath: path, defaultLlmModel: model })
         })
         .then(response => {
             if (!response.ok) throw new Error("Erreur serveur");

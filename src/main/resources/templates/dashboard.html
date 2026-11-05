@@ -100,6 +100,13 @@
                 <form id="retryForm">
                     <input type="hidden" id="modalFileId">
                     <div class="mb-3">
+                        <label for="retryLlmModel" class="form-label">Modèle LLM pour cette action</label>
+                        <select class="form-select" id="retryLlmModel">
+                            <option value="">(Modèle par défaut)</option>
+                            <!-- Populated via JS -->
+                        </select>
+                    </div>
+                    <div class="mb-3">
                         <label for="customPrompt" class="form-label">Instructions complémentaires pour l'IA</label>
                         <textarea class="form-control" id="customPrompt" rows="4"></textarea>
                     </div>
@@ -184,12 +191,30 @@
     let fileDataMap = new Map();
     let allMigrationData = [];
     let currentFilterType = 'ALL';
+    let availableModels = [];
 
     document.addEventListener("DOMContentLoaded", function() {
         convertModal = new bootstrap.Modal(document.getElementById('convertModal'));
         retryModal = new bootstrap.Modal(document.getElementById('retryModal'));
         codeModal = new bootstrap.Modal(document.getElementById('codeModal'));
         sourceModal = new bootstrap.Modal(document.getElementById('sourceModal'));
+
+        fetch('/api/configuration/models')
+            .then(response => response.json())
+            .then(models => {
+                availableModels = models;
+                const modelSelect = document.getElementById('retryLlmModel');
+                if (models && models.length > 0) {
+                    models.forEach(model => {
+                        const option = document.createElement('option');
+                        option.value = model;
+                        option.textContent = model;
+                        modelSelect.appendChild(option);
+                    });
+                }
+            })
+            .catch(error => console.error('Error fetching models:', error));
+
         fetchData();
         setInterval(fetchData, 3000); // Polling every 3 seconds
     });
@@ -370,6 +395,7 @@
         document.getElementById('modalFileName').textContent = sourceFile;
         const file = fileDataMap.get(id);
         document.getElementById('customPrompt').value = (file && file.lastCustomPrompt) ? file.lastCustomPrompt : '';
+        document.getElementById('retryLlmModel').value = ''; // Reset to default
 
         // Populate context files
         const contextFilesList = document.getElementById('contextFilesList');
@@ -492,11 +518,12 @@
         const id = document.getElementById('modalFileId').value;
         const customPrompt = document.getElementById('customPrompt').value;
         const contextFiles = getContextFilesFromList('contextFilesList');
+        const retryModel = document.getElementById('retryLlmModel').value;
 
         fetch(`/api/migration/files/${id}/retry`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ customPrompt: customPrompt, contextFiles: contextFiles })
+            body: JSON.stringify({ customPrompt: customPrompt, contextFiles: contextFiles, llmModel: retryModel })
         })
         .then(response => {
             if (response.ok) {
