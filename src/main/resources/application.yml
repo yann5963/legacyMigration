@@ -5,8 +5,8 @@ spring:
   # Config for target PostgreSQL Database
   datasource:
     url: jdbc:postgresql://localhost:5432/migration_db
-    username: migration_user
-    password: migration_password
+    username: yann
+    password: postgresql
     driver-class-name: org.postgresql.Driver
 
   jpa:
@@ -23,14 +23,17 @@ spring:
       chat:
         options:
           # Spécifiez le modèle Ollama que vous souhaitez utiliser (ex: mistral, llama3)
-          model: mistral
+          model: llama3.2:3b
           temperature: 0.2
+      embedding:
+        options:
+          model: nomic-embed-text-v2-moe:latest
 
     vectorstore:
       pgvector:
         index-type: HNSW
         distance-type: COSINE_DISTANCE
-        dimensions: 1536 # À ajuster selon le modèle d'embedding utilisé
+        dimensions: 768 # À ajuster selon le modèle d'embedding utilisé
 
 # Configuration spécifique à l'outil de migration
 migration:
