@@ -53,7 +53,7 @@
                 </div>
 
                 <div class="d-flex gap-2">
-                    <button type="button" class="btn btn-primary" onclick="saveConfig()">Sauvegarder la configuration</button>
+                    <button type="button" class="btn btn-primary" id="saveConfigBtn" onclick="saveConfig()">Sauvegarder la configuration</button>
                     <button type="button" class="btn btn-secondary" id="springInitializrBtn" onclick="goToSpringInitializr()" disabled>Spring Initialzr</button>
                 </div>
             </form>
@@ -157,6 +157,11 @@
             targetProjectPath: document.getElementById('targetProjectPath') ? document.getElementById('targetProjectPath').value : null
         };
 
+        const btn = document.getElementById('saveConfigBtn');
+        const originalText = btn.textContent;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Sauvegarde...';
+
         fetch('/api/configuration', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -172,6 +177,10 @@
         .catch(error => {
             console.error('Error saving config:', error);
             alert("Erreur réseau.");
+        })
+        .finally(() => {
+            btn.disabled = false;
+            btn.textContent = originalText;
         });
     }
 
@@ -183,8 +192,9 @@
         }
 
         const btn = document.getElementById('scanButton');
+        const originalText = btn.textContent;
         btn.disabled = true;
-        btn.textContent = "Scan en cours...";
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Scan en cours...';
 
         const model = document.getElementById('defaultLlmModel').value;
 
@@ -207,7 +217,7 @@
         })
         .finally(() => {
             btn.disabled = false;
-            btn.textContent = "Scanner le projet";
+            btn.textContent = originalText;
         });
     }
 
