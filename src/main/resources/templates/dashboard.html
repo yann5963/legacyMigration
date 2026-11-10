@@ -446,18 +446,19 @@
         const contextFilesList = document.getElementById(containerId);
         const isFull = mode === 'FULL' ? 'selected' : '';
         const isSignature = mode === 'SIGNATURE_ONLY' ? 'selected' : '';
+        const checkboxId = 'context-file-' + containerId + '-' + index;
 
         const html = `
             <div class="row mb-2 align-items-center context-file-item" data-index="${index}">
                 <div class="col-sm-1">
-                    <input type="checkbox" class="form-check-input context-file-checkbox" checked>
+                    <input type="checkbox" class="form-check-input context-file-checkbox" id="${checkboxId}" checked>
                 </div>
                 <div class="col-sm-7 text-truncate" title="${filePath}">
                     <input type="hidden" class="context-file-path" value="${filePath}">
-                    <small>${filePath.split(/(\\|\/)/g).pop()}</small>
+                    <label for="${checkboxId}"><small>${filePath.split(/(\\|\/)/g).pop()}</small></label>
                 </div>
                 <div class="col-sm-4">
-                    <select class="form-select form-select-sm context-file-mode">
+                    <select class="form-select form-select-sm context-file-mode" aria-label="Mode pour ${filePath.split(/(\\|\/)/g).pop()}">
                         <option value="SIGNATURE_ONLY" ${isSignature}>Signatures seules</option>
                         <option value="FULL" ${isFull}>Fichier complet</option>
                     </select>
