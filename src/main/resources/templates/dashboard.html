@@ -449,15 +449,17 @@
 
         const html = `
             <div class="row mb-2 align-items-center context-file-item" data-index="${index}">
-                <div class="col-sm-1">
-                    <input type="checkbox" class="form-check-input context-file-checkbox" checked>
-                </div>
-                <div class="col-sm-7 text-truncate" title="${filePath}">
-                    <input type="hidden" class="context-file-path" value="${filePath}">
-                    <small>${filePath.split(/(\\|\/)/g).pop()}</small>
+                <div class="col-sm-8">
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input context-file-checkbox" id="context-file-${containerId}-${index}" checked>
+                        <input type="hidden" class="context-file-path" value="${filePath}">
+                        <label class="form-check-label text-truncate" style="width: 100%" for="context-file-${containerId}-${index}" title="${filePath}">
+                            <small>${filePath.split(/(\\|\/)/g).pop()}</small>
+                        </label>
+                    </div>
                 </div>
                 <div class="col-sm-4">
-                    <select class="form-select form-select-sm context-file-mode">
+                    <select class="form-select form-select-sm context-file-mode" aria-label="Mode pour ${filePath.split(/(\\|\/)/g).pop()}">
                         <option value="SIGNATURE_ONLY" ${isSignature}>Signatures seules</option>
                         <option value="FULL" ${isFull}>Fichier complet</option>
                     </select>
