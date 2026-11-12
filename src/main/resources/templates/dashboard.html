@@ -75,7 +75,7 @@
                         <!-- Dynamically populated list of context files -->
                     </div>
                     <div class="input-group mb-3">
-                        <input type="text" class="form-control" id="convertManualContextFile" list="fileList" placeholder="Chercher un fichier à ajouter...">
+                        <input type="text" class="form-control" id="convertManualContextFile" list="fileList" placeholder="Chercher un fichier à ajouter..." aria-label="Chercher un fichier contextuel manuel">
                         <button class="btn btn-outline-secondary" type="button" onclick="addManualContextFile('convert')">Ajouter</button>
                     </div>
                 </form>
@@ -116,7 +116,7 @@
                         <!-- Dynamically populated list of context files -->
                     </div>
                     <div class="input-group mb-3">
-                        <input type="text" class="form-control" id="retryManualContextFile" list="fileList" placeholder="Chercher un fichier à ajouter...">
+                        <input type="text" class="form-control" id="retryManualContextFile" list="fileList" placeholder="Chercher un fichier à ajouter..." aria-label="Chercher un fichier contextuel manuel">
                         <button class="btn btn-outline-secondary" type="button" onclick="addManualContextFile('retry')">Ajouter</button>
                     </div>
                 </form>
@@ -291,6 +291,11 @@
 
         // Sort by layer
         data.sort((a, b) => (a.layer || 1) - (b.layer || 1));
+
+        if (data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">Aucun fichier à afficher. <a href="/configuration">Allez dans Configuration</a> pour scanner un projet.</td></tr>';
+            return;
+        }
 
         data.forEach(file => {
             fileDataMap.set(file.id, file);
