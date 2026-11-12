@@ -5,16 +5,17 @@ spring:
   # Config for target PostgreSQL Database
   datasource:
     url: jdbc:postgresql://localhost:5432/migration_db
-    username: migration_user
-    password: migration_password
+    username: yann
+    password: postgresql
     driver-class-name: org.postgresql.Driver
 
   jpa:
+    show-sql: true
     hibernate:
       ddl-auto: update
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
 
   # Spring AI Configuration
   ai:
@@ -22,15 +23,17 @@ spring:
       base-url: http://localhost:11434
       chat:
         options:
-          # Spécifiez le modèle Ollama que vous souhaitez utiliser (ex: mistral, llama3)
-          model: mistral
+          model: llama3.2:3b
           temperature: 0.2
+      embedding:
+        options:
+          model: nomic-embed-text:v1.5
 
     vectorstore:
       pgvector:
         index-type: HNSW
         distance-type: COSINE_DISTANCE
-        dimensions: 1536 # À ajuster selon le modèle d'embedding utilisé
+        dimensions: 768 # Cohérent avec nomic-embed-text (768 dimensions)
 
 # Configuration spécifique à l'outil de migration
 migration:
@@ -39,6 +42,9 @@ migration:
       - llama3.2:3b
       - granite4.1:3b
       - qwen3:4b
+      - qwen2.5-coder:3b
+      - gemma4-light:latest
+      - gemma4:31b-cloud
 
   source:
     # URL JDBC pour la base Informix
@@ -54,3 +60,10 @@ migration:
 
   # Si true, l'outil demandera une validation humaine dans la console pour les étapes ambiguës
   require-human-validation: true
+
+logging:
+  level:
+    # Affiche les valeurs des paramètres injectés dans le SQL (Spring Boot 3 / Hibernate 6)
+    org.hibernate.orm.jdbc.bind: TRACE
+    # Optionnel : affiche les valeurs extraites des colonnes par Hibernate
+    org.hibernate.orm.jdbc.extract: TRACE

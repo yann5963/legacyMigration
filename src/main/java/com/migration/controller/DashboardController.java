@@ -11,6 +11,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.Charset;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -44,34 +51,51 @@ public class DashboardController {
             String sourceCode = "Non généré.";
             String testCode = "Non généré.";
 
-            try {
-                if (status.getAbsolutePath() != null) {
-                    Path originalPath = Paths.get(status.getAbsolutePath());
-                    if (Files.exists(originalPath)) {
-                        originalCode = Files.readString(originalPath).trim();
-                    } else {
-                        originalCode = "Fichier introuvable sur le disque : " + status.getSourceFile();
-                    }
+            if (status.getAbsolutePath() != null) {
+                Path originalPath = Paths.get(status.getAbsolutePath());
+                if (Files.exists(originalPath)) {
+                    originalCode = readFileSafely(originalPath);
+                } else {
+                    originalCode = "Fichier introuvable sur le disque : " + status.getAbsolutePath();
                 }
-            } catch (Exception e) {
-                // Ignore IO errors
             }
 
             List<String> targetFiles = status.getTargetFiles();
-            try {
-                if (targetFiles != null && targetFiles.size() > 0) {
-                    Path p0 = Paths.get(targetFiles.get(0));
-                    if(Files.exists(p0)) sourceCode = Files.readString(p0).trim();
+            if (targetFiles != null && !targetFiles.isEmpty()) {
+                Path p0 = Paths.get(targetFiles.get(0));
+                if (Files.exists(p0)) {
+                    sourceCode = readFileSafely(p0);
                 }
-                if (targetFiles != null && targetFiles.size() > 1) {
+                if (targetFiles.size() > 1) {
                     Path p1 = Paths.get(targetFiles.get(1));
-                    if(Files.exists(p1)) testCode = Files.readString(p1).trim();
+                    if (Files.exists(p1)) {
+                        testCode = readFileSafely(p1);
+                    }
                 }
-            } catch (Exception e) {
-                // Ignore IO errors for retrieval
             }
-            return ResponseEntity.ok(Map.of("originalCode", originalCode, "sourceCode", sourceCode, "testCode", testCode));
+
+            return ResponseEntity.ok(Map.of(
+                    "originalCode", originalCode,
+                    "sourceCode", sourceCode,
+                    "testCode", testCode));
         }).orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    private String readFileSafely(Path path) {
+        try {
+            byte[] bytes = Files.readAllBytes(path);
+            CharsetDecoder utf8Decoder = StandardCharsets.UTF_8
+                    .newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT);
+            try {
+                return utf8Decoder.decode(ByteBuffer.wrap(bytes)).toString().trim();
+            } catch (CharacterCodingException e) {
+                return new String(bytes, Charset.forName("Windows-1252")).trim();
+            }
+        } catch (IOException e) {
+            return "Erreur de lecture : " + e.getMessage();
+        }
     }
 
     @PostMapping("/{id}/validate")
@@ -84,9 +108,11 @@ public class DashboardController {
                 try {
                     Path filePath = Paths.get(status.getAbsolutePath());
                     String sourceCode = Files.exists(filePath) ? Files.readString(filePath) : "Unknown source";
-                    String trainingContent = "Source: \n" + sourceCode + "\n\nInstruction: " + status.getLastCustomPrompt() + "\n\n(Target code is linked in the project output)";
+                    String trainingContent = "Source: \n" + sourceCode + "\n\nInstruction: "
+                            + status.getLastCustomPrompt() + "\n\n(Target code is linked in the project output)";
 
-                    Document doc = new Document(trainingContent, Map.of("type", "few_shot", "sourceFile", status.getSourceFile()));
+                    Document doc = new Document(trainingContent,
+                            Map.of("type", "few_shot", "sourceFile", status.getSourceFile()));
                     vectorStore.add(List.of(doc));
                 } catch (Exception e) {
                     // Ignored for now
@@ -99,7 +125,8 @@ public class DashboardController {
     }
 
     @PostMapping("/{id}/retry")
-    public ResponseEntity<Void> retryMigration(@PathVariable Long id, @RequestBody(required = false) RetryRequest request) {
+    public ResponseEntity<Void> retryMigration(@PathVariable Long id,
+            @RequestBody(required = false) RetryRequest request) {
         String customPrompt = (request != null) ? request.getCustomPrompt() : null;
         List<com.migration.dto.ContextReferenceDto> contextFiles = (request != null) ? request.getContextFiles() : null;
         String llmModel = (request != null) ? request.getLlmModel() : null;
