@@ -19,6 +19,10 @@ import java.util.ArrayList;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.CascadeType;
 
+/**
+ * Représente le statut d'un fichier lors du processus de migration.
+ * MigrationFileStatus
+ */
 @Entity
 @Data
 @Builder

@@ -12,6 +12,10 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 
+/**
+ * Service pour construire les prompts en utilisant les fichiers de contexte pertinents.
+ * PromptBuilderService
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -19,6 +23,11 @@ public class PromptBuilderService {
 
     private final LegacyCodeParserService parserService;
 
+    /**
+     * Résout les fichiers de contexte pertinents et construit un prompt à partir de leur contenu.
+     * @param contextFiles
+     * @return
+     */
     public String resolveContextFiles(List<ContextReference> contextFiles) {
         if (contextFiles == null || contextFiles.isEmpty()) {
             return "";

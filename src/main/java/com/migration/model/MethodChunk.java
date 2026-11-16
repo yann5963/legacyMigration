@@ -5,6 +5,10 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+/**
+ * Représente un chunk de méthode lors du processus de migration.
+ * MethodChunk
+ */
 @Data
 @Builder
 @NoArgsConstructor

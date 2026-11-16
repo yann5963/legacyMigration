@@ -22,6 +22,13 @@ public class DynamicRoutingService {
 
     private final ProjectConfigurationRepository projectConfigurationRepository;
 
+    /**
+     * Route le code source vers le bon package en fonction du rôle architectural et sauvegarde le fichier.
+     * @param sourceCode
+     * @param role
+     * @param className
+     * @throws IOException
+     */
     public void routeAndSaveFile(String sourceCode, ArchitecturalRole role, String className) throws IOException {
         ProjectConfiguration config = projectConfigurationRepository.findById(1L).orElseThrow(() -> new RuntimeException("Configuration not found"));
 

@@ -7,6 +7,10 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+/**
+ * Représente la configuration d'un projet cible pour la migration.
+ * ProjectConfiguration
+ */
 @Entity
 @Data
 @Builder

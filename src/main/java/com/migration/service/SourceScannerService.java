@@ -16,6 +16,10 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
 
+/**
+ * Service pour scanner le projet source et construire un graphe de dépendances des fichiers Java.
+ * SourceScannerService
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j

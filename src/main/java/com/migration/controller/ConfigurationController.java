@@ -19,6 +19,10 @@ public class ConfigurationController {
     private final TargetProjectConfig targetProjectConfig;
     private final AiConfigProperties aiConfigProperties;
 
+    /**
+     * Récupère la configuration actuelle du projet.
+     * @return
+     */
     @GetMapping
     public ProjectConfiguration getConfiguration() {
         return repository.findById(1L).orElseGet(() -> {
@@ -35,6 +39,11 @@ public class ConfigurationController {
         });
     }
 
+    /**
+     * Met à jour la configuration du projet avec les nouvelles valeurs fournies.
+     * @param config
+     * @return
+     */
     @PostMapping
     public ResponseEntity<ProjectConfiguration> updateConfiguration(@RequestBody ProjectConfiguration config) {
         config.setId(1L); // Ensure we only have one configuration record
@@ -42,6 +51,10 @@ public class ConfigurationController {
         return ResponseEntity.ok(savedConfig);
     }
 
+    /**
+     * Récupère la liste des modèles disponibles pour l'IA.
+     * @return
+     */
     @GetMapping("/models")
     public List<String> getAvailableModels() {
         return aiConfigProperties.getAvailableModels();

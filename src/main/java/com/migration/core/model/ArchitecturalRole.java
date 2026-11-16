@@ -1,5 +1,9 @@
 package com.migration.core.model;
 
+/**
+ * Rôle architectural d'une classe dans le projet.
+ * ArchitecturalRole
+ */
 public enum ArchitecturalRole {
     CONTROLLER("controller", "Contrôleur REST ou MVC"),
     SERVICE("service", "Couche métier et services applicatifs"),

@@ -4,6 +4,10 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.scheduling.annotation.EnableAsync;
 
+/**
+ * Point d'entrée de l'application de migration.
+ * MigrationToolApplication
+ */
 @EnableAsync
 @SpringBootApplication
 public class MigrationToolApplication {

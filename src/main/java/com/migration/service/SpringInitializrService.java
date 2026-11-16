@@ -18,6 +18,10 @@ import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
+/**
+ * Service pour générer un projet Spring Boot en utilisant Spring Initializr.
+ * SpringInitializrService
+ */
 @Service
 @RequiredArgsConstructor
 public class SpringInitializrService {

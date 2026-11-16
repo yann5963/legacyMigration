@@ -11,6 +11,10 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+/**
+ * Référence à un fichier de contexte utilisé lors de la migration.
+ * ContextReference
+ */
 @Entity
 @Data
 @Builder

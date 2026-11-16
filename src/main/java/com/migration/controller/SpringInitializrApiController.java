@@ -15,6 +15,10 @@ import org.springframework.http.HttpMethod;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.bind.annotation.RestController;
 
+/**
+ * Contrôleur pour gérer les interactions avec l'API Spring Initializr.
+ * SpringInitializrApiController
+ */
 @RestController
 @RequestMapping("/api/initializr")
 @RequiredArgsConstructor
@@ -23,6 +27,10 @@ public class SpringInitializrApiController {
     private final SpringInitializrService initializrService;
 
 
+    /**
+     * Récupère les métadonnées de Spring Initializr.
+     * @return
+     */
     @GetMapping(value = "/metadata", produces = "application/vnd.initializr.v2.2+json")
     public ResponseEntity<String> getMetadata() {
         RestTemplate restTemplate = new RestTemplate();
@@ -32,6 +40,11 @@ public class SpringInitializrApiController {
         return restTemplate.exchange("https://start.spring.io/metadata/client", HttpMethod.GET, entity, String.class);
     }
 
+    /**
+     * Génère un projet Spring Initializr basé sur la requête fournie.
+     * @param request
+     * @return
+     */
     @PostMapping("/generate")
     public ResponseEntity<String> generateProject(@RequestBody InitializrRequest request) {
         try {
