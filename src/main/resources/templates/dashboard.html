@@ -12,6 +12,19 @@
             background-color: #6c757d;
         }
 
+        .badge-ANALYZING {
+            background-color: #6f42c1;
+        }
+
+        .badge-ANALYZED {
+            background-color: #0d6efd;
+        }
+
+        .badge-ANALYSIS_FAILED {
+            background-color: #fd7e14;
+            color: #000;
+        }
+
         .badge-CONVERTING {
             background-color: #0dcaf0;
             color: #000;
@@ -55,7 +68,27 @@
     <div class="container mt-4">
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h1>Dashboard de Migration (Manuel)</h1>
-            <a href="/configuration" class="btn btn-primary">Configurer le Projet & Scanner</a>
+            <div class="d-flex gap-2">
+                <button id="preAnalyzeAllBtn" class="btn btn-outline-primary" onclick="preAnalyzeProject()">Pré-analyser (IA)</button>
+                <a href="/configuration" class="btn btn-primary">Configurer le Projet & Scanner</a>
+            </div>
+        </div>
+
+        <!-- Bandeau d'avancement de la pré-analyse IA -->
+        <div id="preAnalysisProgressBanner" class="alert alert-info d-none mb-3" role="status">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <div class="d-flex align-items-center gap-2">
+                    <span id="preAnalysisSpinner" class="spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true"></span>
+                    <strong id="preAnalysisStatusTitle">Pré-analyse IA en cours :</strong>
+                    <code id="preAnalysisCurrentFile" class="text-dark"></code>
+                </div>
+                <span id="preAnalysisCounter" class="badge bg-primary fs-6">0 / 0</span>
+            </div>
+            <div class="progress" style="height: 8px;">
+                <div id="preAnalysisProgressBar" class="progress-bar progress-bar-striped progress-bar-animated"
+                     role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+            </div>
+            <small id="preAnalysisSubInfo" class="text-muted mt-1 d-block"></small>
         </div>
 
         <ul class="nav nav-tabs mb-3" id="fileTypeTabs" role="tablist">
@@ -71,6 +104,7 @@
                         <th>Type</th>
                         <th>Couche</th>
                         <th>Fichier (Chemin absolu)</th>
+                        <th>Pré-analyse IA</th>
                         <th>Fichier(s) Sortant(s)</th>
                         <th>Statut</th>
                         <th>Actions</th>
@@ -179,6 +213,36 @@
         </div>
     </div>
 
+    <!-- Modal for Viewing Pre-Analysis Details -->
+    <div class="modal fade" id="preAnalysisModal" tabindex="-1" aria-labelledby="preAnalysisModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="preAnalysisModalLabel">Pré-analyse sémantique : <span id="preAnalysisFileName"></span></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row mb-3">
+                        <div class="col-md-4"><strong>Rôle architectural :</strong><br><span id="paRole" class="badge bg-secondary"></span></div>
+                        <div class="col-md-4"><strong>Complexité :</strong><br><span id="paComplexity" class="badge bg-info text-dark"></span></div>
+                        <div class="col-md-4"><strong>Artefact Spring cible :</strong><br><span id="paTargetArtifact" class="badge bg-primary"></span></div>
+                    </div>
+                    <div class="mb-3">
+                        <strong>Lot fonctionnel suggéré :</strong> <span id="paFunctionalLot"></span>
+                    </div>
+                    <div class="mb-3">
+                        <strong>Résumé fonctionnel & technique :</strong>
+                        <pre id="paSummary" class="mt-1" style="white-space: pre-wrap;"></pre>
+                    </div>
+                    <div class="mb-3">
+                        <strong>Risques legacy détectés :</strong>
+                        <pre id="paRisks" class="mt-1" style="white-space: pre-wrap;"></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal for Viewing Code -->
     <div class="modal fade modal-xl" id="codeModal" tabindex="-1" aria-labelledby="codeModalLabel" aria-hidden="true">
         <div class="modal-dialog">
@@ -231,6 +295,7 @@
         let retryModal;
         let codeModal;
         let sourceModal;
+        let preAnalysisModal;
         let fileDataMap = new Map();
         let allMigrationData = [];
         let currentFilterType = 'ALL';
@@ -241,6 +306,7 @@
             retryModal = new bootstrap.Modal(document.getElementById('retryModal'));
             codeModal = new bootstrap.Modal(document.getElementById('codeModal'));
             sourceModal = new bootstrap.Modal(document.getElementById('sourceModal'));
+            preAnalysisModal = new bootstrap.Modal(document.getElementById('preAnalysisModal'));
 
             fetch('/api/configuration/models')
                 .then(response => response.json())
@@ -259,8 +325,88 @@
                 .catch(error => console.error('Error fetching models:', error));
 
             fetchData();
-            setInterval(fetchData, 30000); // Polling every 3 seconds
+            pollPreAnalysisStatus();
+            setInterval(fetchData, 30000); // Polling tableau toutes les 30s
         });
+
+        let preAnalysisPollTimer = null;
+        let wasPreAnalysisRunning = false;
+
+        function startPreAnalysisPolling() {
+            if (preAnalysisPollTimer) return;
+            pollPreAnalysisStatus();
+            preAnalysisPollTimer = setInterval(pollPreAnalysisStatus, 2000);
+        }
+
+        function stopPreAnalysisPolling() {
+            if (preAnalysisPollTimer) {
+                clearInterval(preAnalysisPollTimer);
+                preAnalysisPollTimer = null;
+            }
+        }
+
+        function pollPreAnalysisStatus() {
+            fetch('/api/project/pre-analyze/status')
+                .then(response => response.json())
+                .then(progress => {
+                    updatePreAnalysisBanner(progress);
+                    if (progress.running) {
+                        wasPreAnalysisRunning = true;
+                        startPreAnalysisPolling();
+                        fetchData();
+                    } else {
+                        if (wasPreAnalysisRunning) {
+                            wasPreAnalysisRunning = false;
+                            fetchData();
+                        }
+                        stopPreAnalysisPolling();
+                    }
+                })
+                .catch(err => console.error('Error fetching pre-analysis status:', err));
+        }
+
+        function updatePreAnalysisBanner(progress) {
+            const banner = document.getElementById('preAnalysisProgressBanner');
+            const spinner = document.getElementById('preAnalysisSpinner');
+            const title = document.getElementById('preAnalysisStatusTitle');
+            const currentFileEl = document.getElementById('preAnalysisCurrentFile');
+            const counterEl = document.getElementById('preAnalysisCounter');
+            const barEl = document.getElementById('preAnalysisProgressBar');
+            const subInfoEl = document.getElementById('preAnalysisSubInfo');
+            const btn = document.getElementById('preAnalyzeAllBtn');
+
+            const processed = progress.processed || 0;
+            const total = progress.total || 0;
+            const pct = total > 0 ? Math.round((processed / total) * 100) : 0;
+
+            if (progress.running) {
+                banner.classList.remove('d-none', 'alert-success');
+                banner.classList.add('alert-info');
+                spinner.classList.remove('d-none');
+                title.textContent = 'Pré-analyse IA en cours :';
+                currentFileEl.textContent = progress.currentFile || 'Initialisation...';
+                counterEl.textContent = `${processed} / ${total}`;
+                barEl.style.width = `${pct}%`;
+                barEl.setAttribute('aria-valuenow', pct);
+                barEl.classList.add('progress-bar-animated');
+                subInfoEl.textContent = `Progression : ${pct}% (triviaux sans LLM : ${progress.trivial || 0}, échecs : ${progress.failed || 0})`;
+                if (btn) btn.disabled = true;
+            } else if (total > 0 && processed >= total && wasPreAnalysisRunning) {
+                banner.classList.remove('d-none', 'alert-info');
+                banner.classList.add('alert-success');
+                spinner.classList.add('d-none');
+                title.textContent = 'Pré-analyse IA terminée';
+                currentFileEl.textContent = '';
+                counterEl.textContent = `${processed} / ${total}`;
+                barEl.style.width = '100%';
+                barEl.setAttribute('aria-valuenow', 100);
+                barEl.classList.remove('progress-bar-animated');
+                subInfoEl.textContent = `Terminé : ${processed - (progress.failed || 0)} analysé(s) (dont ${progress.trivial || 0} triviaux), ${progress.failed || 0} échec(s).`;
+                if (btn) btn.disabled = false;
+            } else {
+                if (btn) btn.disabled = false;
+            }
+        }
 
         function fetchData() {
             fetch('/api/migration/files')
@@ -321,65 +467,66 @@
 
         function renderTable() {
             const tbody = document.getElementById('migrationTableBody');
-            tbody.innerHTML = ''; // Clear current content
 
             if (!allMigrationData || allMigrationData.length === 0) {
                 tbody.innerHTML = `
-                <tr>
-                    <td colspan="6" class="text-center py-5">
-                        <div class="text-muted mb-3">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="currentColor" class="bi bi-folder2-open mb-2" viewBox="0 0 16 16">
-                              <path d="M1 3.5A1.5 1.5 0 0 1 2.5 2h2.764c.958 0 1.76.56 2.311 1.184C7.985 3.648 8.48 4 9 4h4.5A1.5 1.5 0 0 1 15 5.5v.64c.57.265.94.876.856 1.546l-.64 5.124A2.5 2.5 0 0 1 12.733 15H3.266a2.5 2.5 0 0 1-2.481-2.19l-.64-5.124A1.5 1.5 0 0 1 1 6.14V3.5zM2 6h12v-.5a.5.5 0 0 0-.5-.5H9c-.964 0-1.71-.629-2.174-1.154C6.374 3.334 5.82 3 5.264 3H2.5a.5.5 0 0 0-.5.5V6zm-.367 1a.5.5 0 0 0-.496.562l.64 5.124A1.5 1.5 0 0 0 3.266 14h9.468a1.5 1.5 0 0 0 1.489-1.314l.64-5.124A.5.5 0 0 0 14.367 7H1.633z"/>
-                            </svg>
-                            <br>Aucun fichier scanné pour le moment.
-                        </div>
-                        <a href="/configuration" class="btn btn-outline-primary">Aller à la Configuration pour scanner</a>
-                    </td>
-                </tr>
-            `;
+            <tr>
+                <td colspan="6" class="text-center py-5">
+                    <div class="text-muted mb-3">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="currentColor" class="bi bi-folder2-open mb-2" viewBox="0 0 16 16">
+                          <path d="M1 3.5A1.5 1.5 0 0 1 2.5 2h2.764c.958 0 1.76.56 2.311 1.184C7.985 3.648 8.48 4 9 4h4.5A1.5 1.5 0 0 1 15 5.5v.64c.57.265.94.876.856 1.546l-.64 5.124A2.5 2.5 0 0 1 12.733 15H3.266a2.5 2.5 0 0 1-2.481-2.19l-.64-5.124A1.5 1.5 0 0 1 1 6.14V3.5zM2 6h12v-.5a.5.5 0 0 0-.5-.5H9c-.964 0-1.71-.629-2.174-1.154C6.374 3.334 5.82 3 5.264 3H2.5a.5.5 0 0 0-.5.5V6zm-.367 1a.5.5 0 0 0-.496.562l.64 5.124A1.5 1.5 0 0 0 3.266 14h9.468a1.5 1.5 0 0 0 1.489-1.314l.64-5.124A.5.5 0 0 0 14.367 7H1.633z"/>
+                        </svg>
+                        <br>Aucun fichier scanné pour le moment.
+                    </div>
+                    <a href="/configuration" class="btn btn-outline-primary">Aller à la Configuration pour scanner</a>
+                </td>
+            </tr>`;
                 return;
             }
 
-            let data = allMigrationData;
+            // 1. Pré-calcul des couches validées (O(N) au lieu de O(N²))
+            const layerStatus = {};
+            allMigrationData.forEach(f => {
+                const l = f.layer || 1;
+                if (layerStatus[l] === undefined) layerStatus[l] = true;
+                if (f.status !== 'VALIDATED') layerStatus[l] = false;
+            });
 
-            // Calculate unvalidated dependencies warning (based on all data)
-            const isLayerValidated = (layer) => allMigrationData.filter(f => f.layer === layer).every(f => f.status === 'VALIDATED');
-
-            if (currentFilterType !== 'ALL') {
-                data = data.filter(f => f.fileType === currentFilterType);
-            }
+            // 2. Filtrage et tri sans muter le tableau original
+            let data = currentFilterType !== 'ALL'
+                ? allMigrationData.filter(f => f.fileType === currentFilterType)
+                : [...allMigrationData];
 
             if (data.length === 0) {
-                tbody.innerHTML = `
-                <tr>
-                    <td colspan="6" class="text-center text-muted py-4">Aucun fichier trouvé pour ce filtre.</td>
-                </tr>
-            `;
+                tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-4">Aucun fichier trouvé pour ce filtre.</td></tr>`;
                 return;
             }
 
-            // Sort by layer
             data.sort((a, b) => (a.layer || 1) - (b.layer || 1));
 
-            if (data.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">Aucun fichier à afficher. <a href="/configuration">Allez dans Configuration</a> pour scanner un projet.</td></tr>';
-                return;
-            }
-
-            data.forEach(file => {
+            // 3. Construction du HTML en mémoire
+            const rowsHtml = data.map(file => {
                 fileDataMap.set(file.id, file);
-                const targetFilesStr = file.targetFiles ? file.targetFiles.join(', ') : '';
-                let errorMessageHtml = '';
-                if (file.status === 'ERROR' && file.errorMessage) {
-                    errorMessageHtml = `<br><small class="text-danger">${file.errorMessage}</small>`;
-                }
 
-                // Dependency warning check (if layer > 1 and lower layers are not all validated)
+                // Formatage propre des fichiers sortants (Nom court + chemin complet au survol)
+                const targetFilesHtml = (file.targetFiles && file.targetFiles.length > 0)
+                    ? file.targetFiles.map(path => {
+                        const fileName = path.split(/[/\\]/).pop();
+                        return `<div class="text-truncate" style="max-width: 280px;" title="${path}">${fileName}</div>`;
+                    }).join('')
+                    : '<span class="text-muted fst-italic">Aucun</span>';
+
+                let errorMessageHtml = ((file.status === 'ERROR' || file.status === 'ANALYSIS_FAILED') && file.errorMessage)
+                    ? `<br><small class="text-danger">${file.errorMessage}</small>`
+                    : '';
+
+                // Vérification des dépendances de couches
                 let warningClass = '';
                 let isBlocked = false;
-                if (file.layer > 1 && file.status === 'SCANNED') {
-                    for (let l = 1; l < file.layer; l++) {
-                        if (!isLayerValidated(l)) {
+                const currentLayer = file.layer || 1;
+                if (currentLayer > 1 && ['SCANNED', 'ANALYZED', 'ANALYSIS_FAILED'].includes(file.status)) {
+                    for (let l = 1; l < currentLayer; l++) {
+                        if (layerStatus[l] === false) {
                             isBlocked = true;
                             warningClass = 'table-warning';
                             errorMessageHtml += `<br><small class="text-warning">En attente de la Couche ${l}</small>`;
@@ -388,64 +535,81 @@
                     }
                 }
 
-                let chunkProgressHtml = "";
-
-                if (file.chunks && file.chunks.length > 0) {
-
-                    let total = file.chunks.length;
-
-                    let converted = file.chunks.filter(c => c.status === "SUCCESS").length;
-
-                    if (file.status === "CONVERTING" || file.status === "ERROR" || file.status === "NEEDS_REVIEW") {
-
-                        chunkProgressHtml = `<br><small class="text-info">EN COURS (${converted}/${total} chunks convertis)</small>`;
-
-                    }
-
+                // Résumé compact de pré-analyse
+                let preAnalysisHtml = '<span class="text-muted fst-italic">Non analysé</span>';
+                if (file.architecturalRole || file.migrationComplexity) {
+                    const complexityClass = {
+                        'TRIVIAL': 'bg-success',
+                        'LOW': 'bg-info text-dark',
+                        'MEDIUM': 'bg-warning text-dark',
+                        'HIGH': 'bg-danger',
+                        'CRITICAL': 'bg-dark'
+                    }[file.migrationComplexity] || 'bg-secondary';
+                    preAnalysisHtml = `
+                        <div>
+                            <span class="badge bg-secondary">${file.architecturalRole || 'N/A'}</span>
+                            <span class="badge ${complexityClass}">${file.migrationComplexity || 'N/A'}</span>
+                        </div>
+                        <small class="text-muted">${file.suggestedFunctionalLot || ''}</small>
+                        <br><button class="btn btn-sm btn-outline-secondary mt-1" onclick="viewPreAnalysis(${file.id})">Détails</button>
+                    `;
                 }
+
+                // Progression des chunks
+                let chunkProgressHtml = '';
+                if (file.chunks?.length > 0 && ['CONVERTING', 'ERROR', 'NEEDS_REVIEW'].includes(file.status)) {
+                    const converted = file.chunks.filter(c => c.status === 'SUCCESS').length;
+                    chunkProgressHtml = `<br><small class="text-info">EN COURS (${converted}/${file.chunks.length} chunks)</small>`;
+                }
+
+                // Boutons d'action (disposition horizontale compacte)
                 let actionsHtml = '';
-                if (file.status === 'SCANNED' || file.status === 'ERROR') {
+                if (['SCANNED', 'ANALYZED', 'ANALYSIS_FAILED', 'ERROR'].includes(file.status)) {
                     actionsHtml = `
-                    <div class="btn-group me-1">
+                <div class="d-flex gap-1 flex-nowrap">
+                    <div class="btn-group">
                         <button class="btn btn-sm btn-primary" ${isBlocked ? 'disabled' : ''} onclick="convertFile(${file.id})">Convertir</button>
-                        <button type="button" class="btn btn-sm btn-primary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false" ${isBlocked ? 'disabled' : ''}>
-                            <span class="visually-hidden">Toggle Dropdown</span>
-                        </button>
+                        <button type="button" class="btn btn-sm btn-primary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" ${isBlocked ? 'disabled' : ''}></button>
                         <ul class="dropdown-menu">
                             <li><a class="dropdown-item" href="#" onclick="openConvertModal(${file.id}, '${file.sourceFile}')">Configurer & Convertir</a></li>
+                            <li><a class="dropdown-item" href="#" onclick="preAnalyzeSingleFile(${file.id})">Pré-analyser (IA)</a></li>
                         </ul>
                     </div>
-                    <button class="btn btn-sm btn-warning" onclick="openRetryModal(${file.id}, '${file.sourceFile}')">Ajuster avec l'IA</button>
-                `;
+                    <button class="btn btn-sm btn-warning" onclick="openRetryModal(${file.id}, '${file.sourceFile}')">Ajuster IA</button>
+                </div>`;
                 } else if (file.status === 'NEEDS_REVIEW') {
                     actionsHtml = `
-                    <button class="btn btn-sm btn-info me-1" onclick="viewCode(${file.id})">Voir le code</button>
-                    <button class="btn btn-sm btn-success me-1" onclick="validateFile(${file.id})">Valider</button>
-                    <button class="btn btn-sm btn-warning" onclick="openRetryModal(${file.id}, '${file.sourceFile}')">Ajuster avec l'IA</button>
-                `;
+                <div class="d-flex gap-1 flex-nowrap">
+                    <button class="btn btn-sm btn-info" onclick="viewCode(${file.id})">Code</button>
+                    <button class="btn btn-sm btn-success" onclick="validateFile(${file.id})">Valider</button>
+                    <button class="btn btn-sm btn-warning" onclick="openRetryModal(${file.id}, '${file.sourceFile}')">Ajuster IA</button>
+                </div>`;
                 } else if (file.status === 'VALIDATED') {
-                    actionsHtml = `<span class="text-success">✔ Validé</span>`;
+                    actionsHtml = `<span class="text-success fw-bold">✔ Validé</span>`;
                 }
 
-                const row = `<tr class="${warningClass}">
-                <td>
+                return `
+            <tr class="${warningClass}">
+                <td class="text-nowrap">
                     <span class="badge bg-secondary">${file.fileType}</span>
-                    <br><button class="btn btn-sm btn-outline-info mt-1" onclick="viewOriginalSource(${file.id})">Voir source</button>
+                    <br><button class="btn btn-sm btn-outline-info mt-1" onclick="viewOriginalSource(${file.id})">Source</button>
                 </td>
-                <td><strong>Couche ${file.layer || 1}</strong></td>
-                <td title="${file.absolutePath}">${file.sourceFile}</td>
-                <td>${targetFilesStr}</td>
+                <td class="text-nowrap"><strong>Couche ${currentLayer}</strong></td>
+                <td class="text-truncate" style="max-width: 220px;" title="${file.absolutePath}">${file.sourceFile}</td>
+                <td>${preAnalysisHtml}</td>
+                <td>${targetFilesHtml}</td>
                 <td>
                     <span class="badge badge-${file.status}">${file.status}</span>
                     ${chunkProgressHtml}
                     ${errorMessageHtml}
                 </td>
-                <td>${actionsHtml}</td>
+                <td class="text-nowrap">${actionsHtml}</td>
             </tr>`;
-                tbody.innerHTML += row;
             });
-        }
 
+            // 4. Injection unique dans le DOM
+            tbody.innerHTML = rowsHtml.join('');
+        }
         function convertFile(id) {
             fetch(`/api/migration/files/${id}/convert`, { method: 'POST' })
                 .then(response => {
@@ -656,6 +820,47 @@
                 .catch(err => {
                     alert("Erreur lors de la récupération du code source.");
                 });
+        }
+
+        function preAnalyzeProject() {
+            fetch('/api/project/pre-analyze', { method: 'POST' })
+                .then(response => {
+                    if (response.ok) {
+                        wasPreAnalysisRunning = true;
+                        startPreAnalysisPolling();
+                        fetchData();
+                    } else {
+                        alert("Erreur lors du lancement de la pré-analyse IA.");
+                    }
+                })
+                .catch(err => console.error('Error pre-analyzing project:', err));
+        }
+
+        function preAnalyzeSingleFile(id) {
+            fetch(`/api/migration/files/${id}/pre-analyze`, { method: 'POST' })
+                .then(response => {
+                    if (response.ok) {
+                        wasPreAnalysisRunning = true;
+                        startPreAnalysisPolling();
+                        fetchData();
+                    } else {
+                        alert("Erreur lors du lancement de la pré-analyse du fichier.");
+                    }
+                })
+                .catch(err => console.error('Error pre-analyzing file:', err));
+        }
+
+        function viewPreAnalysis(id) {
+            const file = fileDataMap.get(id);
+            if (!file) return;
+            document.getElementById('preAnalysisFileName').textContent = file.sourceFile || '';
+            document.getElementById('paRole').textContent = file.architecturalRole || 'N/A';
+            document.getElementById('paComplexity').textContent = file.migrationComplexity || 'N/A';
+            document.getElementById('paTargetArtifact').textContent = file.targetSpringArtifact || 'N/A';
+            document.getElementById('paFunctionalLot').textContent = file.suggestedFunctionalLot || 'N/A';
+            document.getElementById('paSummary').textContent = file.functionalSummary || 'Non renseigné.';
+            document.getElementById('paRisks').textContent = file.detectedRisks || 'Aucun risque identifié.';
+            preAnalysisModal.show();
         }
     </script>
 </body>

@@ -6,6 +6,9 @@ package com.migration.model;
  */
 public enum MigrationStatus {
     SCANNED,
+    ANALYZING,
+    ANALYZED,
+    ANALYSIS_FAILED,
     CONVERTING,
     NEEDS_REVIEW,
     VALIDATED,

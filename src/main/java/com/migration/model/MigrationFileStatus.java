@@ -54,6 +54,25 @@ public class MigrationFileStatus {
     private MigrationStatus status;
 
     private String errorMessage;
+
+    @Column(length = 100)
+    private String architecturalRole;
+
+    @Column(length = 50)
+    private String migrationComplexity;
+
+    @Column(columnDefinition = "TEXT")
+    private String functionalSummary;
+
+    @Column(length = 100)
+    private String targetSpringArtifact;
+
+    @Column(columnDefinition = "TEXT")
+    private String detectedRisks;
+
+    @Column(length = 150)
+    private String suggestedFunctionalLot;
+
     @OneToMany(mappedBy = "migrationFileStatus", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @Builder.Default
     private List<FileChunkStatus> chunks = new ArrayList<>();

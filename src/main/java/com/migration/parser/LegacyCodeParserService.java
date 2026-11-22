@@ -142,4 +142,163 @@ public class LegacyCodeParserService {
         });
         return methodChunks;
     }
+
+    /**
+     * Détermine de manière déterministe via JavaParser si un fichier Java est trivial
+     * (DTO/POJO pur, constantes uniquement, getters/setters, constructeurs simples,
+     * equals/hashCode/toString) afin d'éviter un appel LLM inutile.
+     *
+     * @param javaSource Code source Java brut.
+     * @return true si le fichier est trivial, false sinon (ou en cas d'erreur de parsing).
+     */
+    public boolean isTrivialJavaCode(String javaSource) {
+        if (javaSource == null || javaSource.isBlank()) {
+            return false;
+        }
+        try {
+            CompilationUnit cu = StaticJavaParser.parse(javaSource);
+            var types = cu.getTypes();
+            if (types.isEmpty()) {
+                return false;
+            }
+            for (var typeDecl : types) {
+                if (!isTrivialTypeDeclaration(typeDecl)) {
+                    return false;
+                }
+            }
+            return true;
+        } catch (Exception e) {
+            log.debug("Parsing JavaParser impossible pour la détection de trivialité : {}", e.getMessage());
+            return false;
+        }
+    }
+
+    private boolean isTrivialTypeDeclaration(com.github.javaparser.ast.body.TypeDeclaration<?> typeDecl) {
+        if (typeDecl.isEnumDeclaration()) {
+            // Un enum est trivial s'il ne contient pas de méthodes métier (hors getters/toString)
+            return typeDecl.getMethods().stream().allMatch(this::isTrivialMethod)
+                    && typeDecl.getConstructors().stream().allMatch(this::isTrivialConstructor);
+        }
+
+        if (typeDecl.isClassOrInterfaceDeclaration()) {
+            var cid = typeDecl.asClassOrInterfaceDeclaration();
+
+            // Les classes qui étendent des composants web/legacy (Servlet, Struts Action, Filter...) ne sont pas triviales
+            for (var ext : cid.getExtendedTypes()) {
+                String extName = ext.getNameAsString();
+                if (extName.endsWith("Servlet") || extName.endsWith("Action") || extName.endsWith("Filter")
+                        || extName.endsWith("TagSupport") || extName.endsWith("Listener")) {
+                    return false;
+                }
+            }
+
+            // Vérifier les blocs d'initialisation statiques ou d'instance non triviaux
+            if (!cid.findAll(com.github.javaparser.ast.body.InitializerDeclaration.class).isEmpty()) {
+                return false;
+            }
+
+            // Vérifier tous les constructeurs
+            for (var ctor : cid.getConstructors()) {
+                if (!isTrivialConstructor(ctor)) {
+                    return false;
+                }
+            }
+
+            // Vérifier toutes les méthodes
+            for (var method : cid.getMethods()) {
+                if (!isTrivialMethod(method)) {
+                    return false;
+                }
+            }
+
+            // Vérifier les types imbriqués
+            for (var member : cid.getMembers()) {
+                if (member.isTypeDeclaration() && !isTrivialTypeDeclaration(member.asTypeDeclaration())) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        // Records ou annotations simples
+        return typeDecl.isRecordDeclaration()
+                && typeDecl.getMethods().stream().allMatch(this::isTrivialMethod);
+    }
+
+    private boolean isTrivialConstructor(com.github.javaparser.ast.body.ConstructorDeclaration ctor) {
+        var stmts = ctor.getBody().getStatements();
+        for (var stmt : stmts) {
+            if (stmt.isExplicitConstructorInvocationStmt()) {
+                continue;
+            }
+            if (stmt.isExpressionStmt() && stmt.asExpressionStmt().getExpression().isAssignExpr()) {
+                continue;
+            }
+            return false;
+        }
+        return true;
+    }
+
+    private boolean isTrivialMethod(MethodDeclaration method) {
+        String name = method.getNameAsString();
+        // Méthodes boilerplate standard de JavaBeans
+        if (name.equals("equals") || name.equals("hashCode") || name.equals("toString")
+                || name.equals("compareTo") || name.equals("clone")) {
+            return true;
+        }
+
+        // Méthodes abstraites / d'interface : si elles ne ressemblent pas à des getters/setters, ce sont des contrats métier
+        if (method.getBody().isEmpty()) {
+            return isGetterSignature(method) || isSetterSignature(method);
+        }
+
+        var stmts = method.getBody().get().getStatements();
+        if (stmts.size() != 1) {
+            return false;
+        }
+
+        var stmt = stmts.get(0);
+        // Getter simple : 0 paramètre, unique ReturnStmt (accès champ / nom simple)
+        if (isGetterSignature(method) && stmt.isReturnStmt()) {
+            var exprOpt = stmt.asReturnStmt().getExpression();
+            return exprOpt.isPresent()
+                    && (exprOpt.get().isNameExpr() || exprOpt.get().isFieldAccessExpr() || exprOpt.get().isLiteralExpr());
+        }
+
+        // Setter simple : 1 paramètre, unique assignation
+        if (isSetterSignature(method) && stmt.isExpressionStmt()
+                && stmt.asExpressionStmt().getExpression().isAssignExpr()) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private boolean isGetterSignature(MethodDeclaration method) {
+        String name = method.getNameAsString();
+        return method.getParameters().isEmpty()
+                && !method.getType().isVoidType()
+                && ((name.startsWith("get") && name.length() > 3)
+                    || (name.startsWith("is") && name.length() > 2));
+    }
+
+    private boolean isSetterSignature(MethodDeclaration method) {
+        String name = method.getNameAsString();
+        return method.getParameters().size() == 1
+                && method.getType().isVoidType()
+                && name.startsWith("set") && name.length() > 3;
+    }
+
+    /**
+     * Extrait le nom de package d'un code source Java, ou chaîne vide si absent.
+     */
+    public String extractPackageName(String javaSource) {
+        try {
+            CompilationUnit cu = StaticJavaParser.parse(javaSource);
+            return cu.getPackageDeclaration().map(p -> p.getNameAsString()).orElse("");
+        } catch (Exception e) {
+            return "";
+        }
+    }
 }

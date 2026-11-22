@@ -5,6 +5,7 @@ import com.migration.model.MigrationFileStatus;
 import com.migration.model.MigrationStatus;
 import com.migration.repository.MigrationFileStatusRepository;
 import com.migration.service.AsyncMigrationRetryService;
+import com.migration.service.SemanticPreAnalysisService;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.document.Document;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +36,7 @@ public class DashboardController {
 
     private final MigrationFileStatusRepository repository;
     private final AsyncMigrationRetryService retryService;
+    private final SemanticPreAnalysisService preAnalysisService;
     private final VectorStore vectorStore;
 
     /**
@@ -44,6 +46,19 @@ public class DashboardController {
     @GetMapping
     public List<MigrationFileStatus> getAllFiles() {
         return repository.findAll();
+    }
+
+    /**
+     * Déclenche de manière asynchrone la pré-analyse sémantique d'un fichier spécifique.
+     */
+    @PostMapping("/{id}/pre-analyze")
+    public ResponseEntity<Void> preAnalyzeFile(@PathVariable Long id,
+            @RequestParam(required = false) String llmModel) {
+        if (!repository.existsById(id)) {
+            return ResponseEntity.notFound().build();
+        }
+        preAnalysisService.analyzeFile(id, llmModel);
+        return ResponseEntity.accepted().build();
     }
 
     /**

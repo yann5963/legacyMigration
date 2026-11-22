@@ -10,7 +10,7 @@ spring:
     driver-class-name: org.postgresql.Driver
 
   jpa:
-    show-sql: true
+    show-sql: false
     hibernate:
       ddl-auto: update
     properties:
@@ -46,6 +46,7 @@ migration:
       - gemma4-light:latest
       - gemma4:31b-cloud
       - gemma4:e2b
+      - lfm3:latest
 
   source:
     # URL JDBC pour la base Informix
@@ -62,9 +63,3 @@ migration:
   # Si true, l'outil demandera une validation humaine dans la console pour les étapes ambiguës
   require-human-validation: true
 
-logging:
-  level:
-    # Affiche les valeurs des paramètres injectés dans le SQL (Spring Boot 3 / Hibernate 6)
-    org.hibernate.orm.jdbc.bind: TRACE
-    # Optionnel : affiche les valeurs extraites des colonnes par Hibernate
-    org.hibernate.orm.jdbc.extract: TRACE
