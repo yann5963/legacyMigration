@@ -119,7 +119,7 @@
 
     <!-- Modal for Initial Conversion -->
     <div class="modal fade" id="convertModal" tabindex="-1" aria-labelledby="convertModalLabel" aria-hidden="true">
-        <div class="modal-dialog">
+        <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title" id="convertModalLabel">Convertir: <span id="convertModalFileName"></span>
@@ -129,6 +129,14 @@
                 <div class="modal-body">
                     <form id="convertForm">
                         <input type="hidden" id="convertModalFileId">
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <label for="convertCustomPrompt" class="form-label mb-0">Prompt de conversion dynamique (modifiable)</label>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="loadDynamicPrompt('convert')">Régénérer le prompt</button>
+                            </div>
+                            <textarea class="form-control font-monospace" id="convertCustomPrompt" rows="8" style="font-size: 0.85rem;"></textarea>
+                        </div>
+                        <hr>
                         <h6>Fichiers de contexte</h6>
                         <div id="convertContextFilesList" class="mb-3">
                             <!-- Dynamically populated list of context files -->
@@ -153,7 +161,7 @@
 
     <!-- Modal for Retrying -->
     <div class="modal fade" id="retryModal" tabindex="-1" aria-labelledby="retryModalLabel" aria-hidden="true">
-        <div class="modal-dialog">
+        <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title" id="retryModalLabel">Ajuster avec l'IA: <span id="modalFileName"></span>
@@ -171,8 +179,11 @@
                             </select>
                         </div>
                         <div class="mb-3">
-                            <label for="customPrompt" class="form-label">Instructions complémentaires pour l'IA</label>
-                            <textarea class="form-control" id="customPrompt" rows="4"></textarea>
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <label for="customPrompt" class="form-label mb-0">Prompt de conversion / Instructions pour l'IA</label>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="loadDynamicPrompt('retry')">Régénérer le prompt dynamique</button>
+                            </div>
+                            <textarea class="form-control font-monospace" id="customPrompt" rows="8" style="font-size: 0.85rem;"></textarea>
                         </div>
                         <hr>
                         <h6>Fichiers de contexte</h6>
@@ -508,13 +519,21 @@
             const rowsHtml = data.map(file => {
                 fileDataMap.set(file.id, file);
 
-                // Formatage propre des fichiers sortants (Nom court + chemin complet au survol)
-                const targetFilesHtml = (file.targetFiles && file.targetFiles.length > 0)
-                    ? file.targetFiles.map(path => {
+                // Formatage propre des fichiers sortants (artefacts multi-fichiers ou fallback targetFiles)
+                let targetFilesHtml = '<span class="text-muted fst-italic">Aucun</span>';
+                if (file.generatedArtifacts && file.generatedArtifacts.length > 0) {
+                    targetFilesHtml = file.generatedArtifacts.map(art => {
+                        const relPath = art.relativeTargetPath || '';
+                        const fileName = relPath.split(/[/\\]/).pop() || relPath;
+                        const typeBadge = art.artifactType || 'FILE';
+                        return `<div class="text-truncate" style="max-width: 280px;" title="${relPath}"><span class="badge bg-light text-dark border me-1">${typeBadge}</span>${fileName}</div>`;
+                    }).join('');
+                } else if (file.targetFiles && file.targetFiles.length > 0) {
+                    targetFilesHtml = file.targetFiles.map(path => {
                         const fileName = path.split(/[/\\]/).pop();
                         return `<div class="text-truncate" style="max-width: 280px;" title="${path}">${fileName}</div>`;
-                    }).join('')
-                    : '<span class="text-muted fst-italic">Aucun</span>';
+                    }).join('');
+                }
 
                 let errorMessageHtml = ((file.status === 'ERROR' || file.status === 'ANALYSIS_FAILED') && file.errorMessage)
                     ? `<br><small class="text-danger">${file.errorMessage}</small>`
@@ -577,15 +596,13 @@
                     </div>
                     <button class="btn btn-sm btn-warning" onclick="openRetryModal(${file.id}, '${file.sourceFile}')">Ajuster IA</button>
                 </div>`;
-                } else if (file.status === 'NEEDS_REVIEW') {
+                } else if (['NEEDS_REVIEW', 'VALIDATED'].includes(file.status)) {
                     actionsHtml = `
-                <div class="d-flex gap-1 flex-nowrap">
+                <div class="d-flex gap-1 flex-nowrap align-items-center">
                     <button class="btn btn-sm btn-info" onclick="viewCode(${file.id})">Code</button>
-                    <button class="btn btn-sm btn-success" onclick="validateFile(${file.id})">Valider</button>
+                    <button class="btn btn-sm btn-success" onclick="validateFile(${file.id})">Sauvegarder</button>
                     <button class="btn btn-sm btn-warning" onclick="openRetryModal(${file.id}, '${file.sourceFile}')">Ajuster IA</button>
                 </div>`;
-                } else if (file.status === 'VALIDATED') {
-                    actionsHtml = `<span class="text-success fw-bold">✔ Validé</span>`;
                 }
 
                 return `
@@ -623,7 +640,7 @@
             fetch(`/api/migration/files/${id}/validate`, { method: 'POST' })
                 .then(response => {
                     if (response.ok) fetchData();
-                    else alert("Erreur lors de la validation.");
+                    else alert("Erreur lors de la sauvegarde.");
                 })
                 .catch(error => console.error('Error validating:', error));
         }
@@ -632,7 +649,9 @@
             document.getElementById('modalFileId').value = id;
             document.getElementById('modalFileName').textContent = sourceFile;
             const file = fileDataMap.get(id);
-            document.getElementById('customPrompt').value = (file && file.lastCustomPrompt) ? file.lastCustomPrompt : '';
+            const promptArea = document.getElementById('customPrompt');
+            promptArea.dataset.userEdited = 'false';
+            promptArea.value = (file && file.lastCustomPrompt) ? file.lastCustomPrompt : '';
             document.getElementById('retryLlmModel').value = ''; // Reset to default
 
             // Populate context files
@@ -646,6 +665,10 @@
 
             populateDatalist();
 
+            if (!promptArea.value.trim()) {
+                loadDynamicPrompt('retry');
+            }
+
             retryModal.show();
         }
 
@@ -653,6 +676,9 @@
             document.getElementById('convertModalFileId').value = id;
             document.getElementById('convertModalFileName').textContent = sourceFile;
             const file = fileDataMap.get(id);
+            const promptArea = document.getElementById('convertCustomPrompt');
+            promptArea.dataset.userEdited = 'false';
+            promptArea.value = 'Chargement du prompt dynamique...';
 
             // Populate context files
             const contextFilesList = document.getElementById('convertContextFilesList');
@@ -664,8 +690,33 @@
             }
 
             populateDatalist();
+            loadDynamicPrompt('convert');
 
             convertModal.show();
+        }
+
+        function loadDynamicPrompt(type) {
+            const id = document.getElementById(type === 'convert' ? 'convertModalFileId' : 'modalFileId').value;
+            const listId = type === 'convert' ? 'convertContextFilesList' : 'contextFilesList';
+            const promptArea = document.getElementById(type === 'convert' ? 'convertCustomPrompt' : 'customPrompt');
+            const extraContextPaths = getContextFilesFromList(listId).map(cf => cf.filePath);
+
+            fetch(`/api/migration/files/${id}/prompt-preview`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(extraContextPaths)
+            })
+                .then(res => res.ok ? res.json() : Promise.reject('Erreur HTTP'))
+                .then(data => {
+                    promptArea.value = data.prompt || '';
+                    promptArea.dataset.userEdited = 'false';
+                })
+                .catch(err => {
+                    console.error('Erreur chargement prompt dynamique:', err);
+                    if (promptArea.value === 'Chargement du prompt dynamique...') {
+                        promptArea.value = '';
+                    }
+                });
         }
 
         function populateDatalist() {
@@ -732,6 +783,7 @@
 
         function submitConvert() {
             const id = document.getElementById('convertModalFileId').value;
+            const customPrompt = document.getElementById('convertCustomPrompt').value;
             const contextFiles = getContextFilesFromList('convertContextFilesList');
 
             const btn = document.getElementById('submitConvertBtn');
@@ -742,7 +794,7 @@
             fetch(`/api/migration/files/${id}/convert`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ contextFiles: contextFiles })
+                body: JSON.stringify({ customPrompt: customPrompt, contextFiles: contextFiles })
             })
                 .then(response => {
                     if (response.ok) {
@@ -801,8 +853,69 @@
                 .then(res => res.json())
                 .then(data => {
                     document.getElementById('originalCodeBlock').textContent = data.originalCode || 'Non généré.';
-                    document.getElementById('sourceCodeBlock').textContent = data.sourceCode || 'Non généré.';
-                    document.getElementById('testCodeBlock').textContent = data.testCode || 'Non généré.';
+
+                    const tabsEl = document.getElementById('codeTabs');
+                    const contentEl = document.getElementById('codeTabsContent');
+
+                    if (data.artifacts && data.artifacts.length > 0) {
+                        tabsEl.innerHTML = '';
+                        contentEl.innerHTML = '';
+
+                        data.artifacts.forEach((art, idx) => {
+                            const isActive = idx === 0;
+                            const relPath = art.relativeTargetPath || `Artefact-${idx + 1}`;
+                            const fileName = relPath.split(/[/\\]/).pop() || relPath;
+                            const typeLabel = art.artifactType || 'FILE';
+                            const tabId = `artifact-tab-${idx}`;
+                            const paneId = `artifact-pane-${idx}`;
+
+                            const li = document.createElement('li');
+                            li.className = 'nav-item';
+                            li.setAttribute('role', 'presentation');
+                            const btn = document.createElement('button');
+                            btn.className = `nav-link${isActive ? ' active' : ''}`;
+                            btn.id = tabId;
+                            btn.setAttribute('data-bs-toggle', 'tab');
+                            btn.setAttribute('data-bs-target', `#${paneId}`);
+                            btn.type = 'button';
+                            btn.setAttribute('role', 'tab');
+                            btn.title = relPath;
+                            btn.textContent = `[${typeLabel}] ${fileName}`;
+                            li.appendChild(btn);
+                            tabsEl.appendChild(li);
+
+                            const pane = document.createElement('div');
+                            pane.className = `tab-pane fade${isActive ? ' show active' : ''}`;
+                            pane.id = paneId;
+                            pane.setAttribute('role', 'tabpanel');
+
+                            const pathInfo = document.createElement('div');
+                            pathInfo.className = 'small text-muted mb-2 font-monospace';
+                            pathInfo.textContent = relPath;
+                            pane.appendChild(pathInfo);
+
+                            const pre = document.createElement('pre');
+                            const code = document.createElement('code');
+                            code.textContent = art.generatedCode || '';
+                            pre.appendChild(code);
+                            pane.appendChild(pre);
+                            contentEl.appendChild(pane);
+                        });
+                    } else {
+                        tabsEl.innerHTML = `
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="source-tab" data-bs-toggle="tab" data-bs-target="#source-pane" type="button" role="tab">Code Source Métier</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="test-tab" data-bs-toggle="tab" data-bs-target="#test-pane" type="button" role="tab">Test Unitaire (JUnit 5)</button>
+                            </li>`;
+                        contentEl.innerHTML = `
+                            <div class="tab-pane fade show active" id="source-pane" role="tabpanel"><pre><code id="sourceCodeBlock"></code></pre></div>
+                            <div class="tab-pane fade" id="test-pane" role="tabpanel"><pre><code id="testCodeBlock"></code></pre></div>`;
+                        document.getElementById('sourceCodeBlock').textContent = data.sourceCode || 'Non généré.';
+                        document.getElementById('testCodeBlock').textContent = data.testCode || 'Non généré.';
+                    }
+
                     codeModal.show();
                 })
                 .catch(err => {

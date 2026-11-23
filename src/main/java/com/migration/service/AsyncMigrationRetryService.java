@@ -4,8 +4,10 @@ import com.github.javaparser.StaticJavaParser;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.migration.ai.MigrationAiService;
+import com.migration.dto.MultiFileConversionResponse;
 import com.migration.model.ChunkStatus;
 import com.migration.model.FileChunkStatus;
+import com.migration.model.GeneratedArtifact;
 import com.migration.model.MethodChunk;
 import com.migration.model.ContextMode;
 import com.migration.model.ContextReference;
@@ -40,6 +42,7 @@ public class AsyncMigrationRetryService {
     private final MigrationAiService aiService;
     private final VectorStore vectorStore;
     private final LegacyCodeParserService parserService;
+    private final DynamicPromptBuilderService dynamicPromptBuilderService;
 
     @Value("${migration.target.output-dir}")
     private String outputDir;
@@ -51,9 +54,6 @@ public class AsyncMigrationRetryService {
 
         status.setStatus(MigrationStatus.CONVERTING);
         status.setErrorMessage(null);
-        if (customPrompt != null && !customPrompt.isEmpty()) {
-            status.setLastCustomPrompt(customPrompt);
-        }
 
         if (contextFilesDto != null) {
             status.getContextFiles().clear();
@@ -64,6 +64,11 @@ public class AsyncMigrationRetryService {
                 status.getContextFiles().add(ref);
             }
         }
+
+        String effectivePrompt = (customPrompt != null && !customPrompt.trim().isEmpty())
+                ? customPrompt
+                : dynamicPromptBuilderService.buildConversionPrompt(status, List.of());
+        status.setLastCustomPrompt(effectivePrompt);
 
         repository.save(status);
 
@@ -78,9 +83,9 @@ public class AsyncMigrationRetryService {
             }
 
             if (parserService.shouldChunk(userMessage)) {
-                processLargeFile(status, userMessage, customPrompt, llmModel);
+                processLargeFile(status, userMessage, effectivePrompt, llmModel);
             } else {
-                processStandardFile(status, userMessage, customPrompt, llmModel);
+                processStandardFile(status, userMessage, effectivePrompt, llmModel);
             }
 
         } catch (Exception e) {
@@ -115,19 +120,17 @@ public class AsyncMigrationRetryService {
         return sb.toString();
     }
 
-    private void processStandardFile(MigrationFileStatus status, String userMessage, String customPrompt, String llmModel) throws Exception {
-        String systemPrompt = "Tu es un développeur Java expert. Récris le code legacy J2EE suivant en une classe Spring Boot moderne. Tu DOIS générer DEUX blocs de code distincts entourés par ```java ... ``` : d'abord la classe source, ensuite la classe de test JUnit 5 (avec Mockito).";
+    private void processStandardFile(MigrationFileStatus status, String userMessage, String effectivePrompt, String llmModel) throws Exception {
+        String systemPrompt = effectivePrompt;
         systemPrompt = appendRagContext(systemPrompt, userMessage);
-
         systemPrompt += resolveContextFiles(status.getContextFiles());
 
-        String additionalInstructions = null;
-        if (customPrompt != null && !customPrompt.isEmpty()) {
-            additionalInstructions = "Ceci est une correction d'une tentative précédente. Suis STRICTEMENT les instructions suivantes : " + customPrompt;
+        MultiFileConversionResponse response = aiService.convertToMultiFile(systemPrompt, userMessage, llmModel);
+        if (response != null && response.artifacts() != null && !response.artifacts().isEmpty()) {
+            saveMultiFileArtifacts(status, response.artifacts());
+        } else {
+            throw new IllegalStateException("Le LLM n'a retourné aucun artefact pour " + status.getSourceFile());
         }
-
-        String response = aiService.analyzeAndRefactor(systemPrompt, Map.of(), userMessage, additionalInstructions, llmModel);
-        saveFilesAndComplete(status, response);
     }
 
     private void processLargeFile(MigrationFileStatus status, String userMessage, String customPrompt, String llmModel) throws Exception {
@@ -243,28 +246,100 @@ public class AsyncMigrationRetryService {
         return response.trim(); // fallback if no code blocks
     }
 
+    private void saveMultiFileArtifacts(MigrationFileStatus status,
+                                        List<MultiFileConversionResponse.TargetFileItem> artifacts) throws Exception {
+        List<String> generatedFiles = new ArrayList<>();
+        status.getGeneratedArtifacts().clear();
+
+        Path baseOutputPath = Paths.get(outputDir).toAbsolutePath().normalize();
+        for (MultiFileConversionResponse.TargetFileItem item : artifacts) {
+            if (item == null || item.code() == null || item.code().isBlank()) {
+                continue;
+            }
+            String relPath = (item.relativeTargetPath() != null && !item.relativeTargetPath().isBlank())
+                    ? item.relativeTargetPath().trim().replace("\\", "/")
+                    : "src/main/java/com/migration/target/" + status.getSourceFile();
+            while (relPath.startsWith("/")) {
+                relPath = relPath.substring(1);
+            }
+
+            Path targetOut = baseOutputPath.resolve(relPath).normalize();
+            if (!targetOut.startsWith(baseOutputPath)) {
+                throw new SecurityException("Chemin cible hors du répertoire de sortie : " + relPath);
+            }
+            Files.createDirectories(targetOut.getParent());
+            Files.writeString(targetOut, item.code());
+            generatedFiles.add(targetOut.toString());
+
+            String artifactType = (item.artifactType() != null && !item.artifactType().isBlank())
+                    ? item.artifactType().trim().toUpperCase()
+                    : "OTHER";
+
+            GeneratedArtifact artifact = GeneratedArtifact.builder()
+                    .relativeTargetPath(relPath)
+                    .artifactType(artifactType)
+                    .generatedCode(item.code())
+                    .validated(false)
+                    .migrationFileStatus(status)
+                    .build();
+            status.getGeneratedArtifacts().add(artifact);
+        }
+
+        log.info("Converted file {} into {} artifact(s).", status.getSourceFile(), status.getGeneratedArtifacts().size());
+
+        status.setStatus(MigrationStatus.NEEDS_REVIEW);
+        status.setConverted(true);
+        status.setTargetFiles(generatedFiles);
+        repository.save(status);
+    }
+
     private void saveFilesAndComplete(MigrationFileStatus status, String response) throws Exception {
         List<String> generatedFiles = new ArrayList<>();
+        status.getGeneratedArtifacts().clear();
         String[] parts = response.split("```java");
         if (parts.length > 1) {
             String sourceCode = parts[1].split("```")[0].trim();
             String baseName = status.getSourceFile().replace(".java", "");
-            Path sourceOut = Paths.get(outputDir, "src/main/java/com/migrated", baseName + ".java");
+            String relSource = "src/main/java/com/migrated/" + baseName + ".java";
+            Path sourceOut = Paths.get(outputDir, relSource);
             Files.createDirectories(sourceOut.getParent());
             Files.writeString(sourceOut, sourceCode);
             generatedFiles.add(sourceOut.toString());
+            status.getGeneratedArtifacts().add(GeneratedArtifact.builder()
+                    .relativeTargetPath(relSource)
+                    .artifactType("SOURCE")
+                    .generatedCode(sourceCode)
+                    .validated(false)
+                    .migrationFileStatus(status)
+                    .build());
             if (parts.length > 2) {
                 String testCode = parts[2].split("```")[0].trim();
-                Path testOut = Paths.get(outputDir, "src/test/java/com/migrated", baseName + "Test.java");
+                String relTest = "src/test/java/com/migrated/" + baseName + "Test.java";
+                Path testOut = Paths.get(outputDir, relTest);
                 Files.createDirectories(testOut.getParent());
                 Files.writeString(testOut, testCode);
                 generatedFiles.add(testOut.toString());
+                status.getGeneratedArtifacts().add(GeneratedArtifact.builder()
+                        .relativeTargetPath(relTest)
+                        .artifactType("TEST")
+                        .generatedCode(testCode)
+                        .validated(false)
+                        .migrationFileStatus(status)
+                        .build());
             }
         } else {
-            Path fallbackOut = Paths.get(outputDir, "src/main/java/com/migrated/Fallback.java");
+            String relFallback = "src/main/java/com/migrated/Fallback.java";
+            Path fallbackOut = Paths.get(outputDir, relFallback);
             Files.createDirectories(fallbackOut.getParent());
             Files.writeString(fallbackOut, response);
             generatedFiles.add(fallbackOut.toString());
+            status.getGeneratedArtifacts().add(GeneratedArtifact.builder()
+                    .relativeTargetPath(relFallback)
+                    .artifactType("OTHER")
+                    .generatedCode(response)
+                    .validated(false)
+                    .migrationFileStatus(status)
+                    .build());
         }
 
         log.info("Converted file {} successfully. Response length: {}", status.getSourceFile(), response.length());

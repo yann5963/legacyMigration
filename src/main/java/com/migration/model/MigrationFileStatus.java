@@ -18,6 +18,8 @@ import java.util.List;
 import java.util.ArrayList;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.CascadeType;
+import org.hibernate.annotations.Fetch;
+import org.hibernate.annotations.FetchMode;
 
 /**
  * Représente le statut d'un fichier lors du processus de migration.
@@ -42,7 +44,7 @@ public class MigrationFileStatus {
 
     private Integer layer;
 
-    @Column(length = 2000)
+    @Column(length = 20000)
     private String lastCustomPrompt;
 
     private String sourceFile;
@@ -80,4 +82,9 @@ public class MigrationFileStatus {
     @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     @Builder.Default
     private List<ContextReference> contextFiles = new ArrayList<>();
+
+    @OneToMany(mappedBy = "migrationFileStatus", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
+    @Fetch(FetchMode.SUBSELECT)
+    @Builder.Default
+    private List<GeneratedArtifact> generatedArtifacts = new ArrayList<>();
 }

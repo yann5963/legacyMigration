@@ -46,6 +46,8 @@ public class StatusConstraintSynchronizer implements ApplicationRunner {
             jdbcTemplate.execute(
                     "ALTER TABLE migration_file_status ADD CONSTRAINT migration_file_status_status_check CHECK (status IN ("
                             + allowedValues + "))");
+            jdbcTemplate.execute(
+                    "ALTER TABLE migration_file_status ALTER COLUMN last_custom_prompt TYPE varchar(20000)");
 
             log.info("Contrainte PostgreSQL migration_file_status_status_check synchronisée avec {} statuts.",
                     MigrationStatus.values().length);

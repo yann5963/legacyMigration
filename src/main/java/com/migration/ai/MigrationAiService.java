@@ -1,14 +1,17 @@
 package com.migration.ai;
 
+import com.fasterxml.jackson.core.json.JsonReadFeature;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migration.dto.FilePreAnalysisResult;
+import com.migration.dto.MultiFileConversionResponse;
 import com.migration.model.ProjectConfiguration;
 import com.migration.repository.ProjectConfigurationRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.ChatClient;
 import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.chat.prompt.SystemPromptTemplate;
@@ -107,9 +110,7 @@ public class MigrationAiService {
     public FilePreAnalysisResult preAnalyzeFile(String fileName, String fileType, String sourceCode, String model) {
         log.debug("Pré-analyse sémantique LLM du fichier {} ({})...", fileName, fileType);
 
-        ObjectMapper lenientMapper = new ObjectMapper()
-                .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
-                .configure(DeserializationFeature.ACCEPT_SINGLE_VALUE_AS_ARRAY, true);
+        ObjectMapper lenientMapper = createLenientObjectMapper();
         BeanOutputParser<FilePreAnalysisResult> outputParser =
                 new BeanOutputParser<>(FilePreAnalysisResult.class, lenientMapper);
 
@@ -183,6 +184,67 @@ public class MigrationAiService {
             String repairedResponse = chatClient.call(repairPrompt).getResult().getOutput().getContent();
             return outputParser.parse(extractJsonPayload(repairedResponse));
         }
+    }
+
+    /**
+     * Effectue une conversion multi-fichiers (1 -> N) vers Spring Boot 3 en sortie structurée JSON.
+     *
+     * @param systemPrompt Directives complètes de conversion (rôle, risques, dépendances, découpage).
+     * @param sourceCode   Code source legacy à convertir.
+     * @param model        Modèle Ollama optionnel.
+     * @return Réponse structurée {@link MultiFileConversionResponse}.
+     */
+    public MultiFileConversionResponse convertToMultiFile(String systemPrompt, String sourceCode, String model) {
+        log.debug("Appel au LLM pour conversion multi-fichiers...");
+
+        ObjectMapper lenientMapper = createLenientObjectMapper();
+        BeanOutputParser<MultiFileConversionResponse> outputParser =
+                new BeanOutputParser<>(MultiFileConversionResponse.class, lenientMapper);
+
+        String fullSystemPrompt = systemPrompt + "\n\n"
+                + "Réponds EXCLUSIVEMENT par un objet JSON valide (aucun texte, aucun markdown autour, aucun commentaire // ou /* */ en dehors des chaînes JSON, retours à la ligne et guillemets échappés dans `code`) respectant ce schéma :\n"
+                + outputParser.getFormat();
+
+        SystemMessage systemMessage = new SystemMessage(fullSystemPrompt);
+        UserMessage userMessage = new UserMessage(
+                "Convertis le code source legacy suivant en respectant toutes les directives ci-dessus :\n\n```java\n"
+                        + (sourceCode != null ? sourceCode : "") + "\n```");
+
+        String modelToUse = resolveModel(model);
+        OllamaOptions options = OllamaOptions.create()
+                .withTemperature(0.2f)
+                .withNumCtx(8192);
+        if (modelToUse != null && !modelToUse.isBlank()) {
+            options = options.withModel(modelToUse);
+        }
+
+        Prompt prompt = new Prompt(List.of(systemMessage, userMessage), options);
+        String rawResponse = chatClient.call(prompt).getResult().getOutput().getContent();
+
+        try {
+            return outputParser.parse(extractJsonPayload(rawResponse));
+        } catch (Exception firstError) {
+            log.debug("Premier parsing JSON multi-fichiers échoué, tentative de reformattage JSON...");
+            UserMessage repairMessage = new UserMessage("""
+                    Convertis la réponse suivante en UN SEUL objet JSON strictement valide (rien avant {, rien après }, aucun commentaire // ou /* */ hors des chaînes, guillemets et retours à la ligne échappés) respectant la structure :
+                    {"architecturalNotes": "...", "artifacts": [{"relativeTargetPath": "...", "artifactType": "...", "code": "..."}]}
+
+                    Réponse à convertir :
+                    """ + rawResponse);
+            Prompt repairPrompt = new Prompt(List.of(systemMessage, repairMessage), options);
+            String repairedResponse = chatClient.call(repairPrompt).getResult().getOutput().getContent();
+            return outputParser.parse(extractJsonPayload(repairedResponse));
+        }
+    }
+
+    private ObjectMapper createLenientObjectMapper() {
+        return new ObjectMapper()
+                .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+                .configure(DeserializationFeature.ACCEPT_SINGLE_VALUE_AS_ARRAY, true)
+                .configure(JsonReadFeature.ALLOW_JAVA_COMMENTS.mappedFeature(), true)
+                .configure(JsonReadFeature.ALLOW_UNESCAPED_CONTROL_CHARS.mappedFeature(), true)
+                .configure(JsonReadFeature.ALLOW_SINGLE_QUOTES.mappedFeature(), true)
+                .configure(JsonReadFeature.ALLOW_TRAILING_COMMA.mappedFeature(), true);
     }
 
     private String resolveModel(String requestedModel) {

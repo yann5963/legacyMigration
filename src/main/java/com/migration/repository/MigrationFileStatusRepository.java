@@ -7,8 +7,11 @@ import org.springframework.stereotype.Repository;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface MigrationFileStatusRepository extends JpaRepository<MigrationFileStatus, Long> {
     List<MigrationFileStatus> findByStatusIn(Collection<MigrationStatus> statuses);
+
+    Optional<MigrationFileStatus> findByAbsolutePath(String absolutePath);
 }

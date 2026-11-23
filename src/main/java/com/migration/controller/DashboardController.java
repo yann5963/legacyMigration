@@ -1,10 +1,13 @@
 package com.migration.controller;
 
 import com.migration.dto.RetryRequest;
+import com.migration.model.GeneratedArtifact;
 import com.migration.model.MigrationFileStatus;
 import com.migration.model.MigrationStatus;
 import com.migration.repository.MigrationFileStatusRepository;
 import com.migration.service.AsyncMigrationRetryService;
+import com.migration.service.DynamicPromptBuilderService;
+import com.migration.service.DynamicRoutingService;
 import com.migration.service.SemanticPreAnalysisService;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.document.Document;
@@ -37,6 +40,8 @@ public class DashboardController {
     private final MigrationFileStatusRepository repository;
     private final AsyncMigrationRetryService retryService;
     private final SemanticPreAnalysisService preAnalysisService;
+    private final DynamicPromptBuilderService dynamicPromptBuilderService;
+    private final DynamicRoutingService dynamicRoutingService;
     private final VectorStore vectorStore;
 
     /**
@@ -62,23 +67,42 @@ public class DashboardController {
     }
 
     /**
+     * Génère un aperçu du prompt de conversion dynamique avant exécution.
+     */
+    @PostMapping("/{id}/prompt-preview")
+    public ResponseEntity<Map<String, String>> previewConversionPrompt(
+            @PathVariable Long id,
+            @RequestBody(required = false) List<String> extraContextPaths) {
+        return repository.findById(id)
+                .map(status -> ResponseEntity.ok(Map.of(
+                        "prompt", dynamicPromptBuilderService.buildConversionPrompt(status, extraContextPaths))))
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /**
      * Convertit un fichier de migration en utilisant le service de conversion asynchrone.
      * @param id
+     * @param request
      * @return
      */
     @PostMapping("/{id}/convert")
-    public ResponseEntity<Void> convertMigration(@PathVariable Long id) {
-        retryService.convertFile(id, null, null, null);
+    public ResponseEntity<Void> convertMigration(@PathVariable Long id,
+            @RequestBody(required = false) RetryRequest request) {
+        String customPrompt = (request != null) ? request.getCustomPrompt() : null;
+        List<com.migration.dto.ContextReferenceDto> contextFiles = (request != null) ? request.getContextFiles() : null;
+        String llmModel = (request != null) ? request.getLlmModel() : null;
+        retryService.convertFile(id, customPrompt, contextFiles, llmModel);
         return ResponseEntity.accepted().build();
     }
 
     /**
-     * Récupère le contenu d'un fichier de migration, y compris le code original, le code source et le code de test.
+     * Récupère le contenu d'un fichier de migration, y compris le code original, le code source,
+     * le code de test et la liste complète des artefacts générés.
      * @param id
      * @return
      */
     @GetMapping("/{id}/content")
-    public ResponseEntity<Map<String, String>> getFileContent(@PathVariable Long id) {
+    public ResponseEntity<Map<String, Object>> getFileContent(@PathVariable Long id) {
         return repository.findById(id).map(status -> {
             String originalCode = "Non généré.";
             String sourceCode = "Non généré.";
@@ -93,24 +117,38 @@ public class DashboardController {
                 }
             }
 
-            List<String> targetFiles = status.getTargetFiles();
-            if (targetFiles != null && !targetFiles.isEmpty()) {
-                Path p0 = Paths.get(targetFiles.get(0));
-                if (Files.exists(p0)) {
-                    sourceCode = readFileSafely(p0);
+            List<GeneratedArtifact> artifacts = status.getGeneratedArtifacts() != null
+                    ? status.getGeneratedArtifacts()
+                    : List.of();
+
+            if (!artifacts.isEmpty()) {
+                sourceCode = artifacts.get(0).getGeneratedCode() != null
+                        ? artifacts.get(0).getGeneratedCode()
+                        : sourceCode;
+                if (artifacts.size() > 1 && artifacts.get(1).getGeneratedCode() != null) {
+                    testCode = artifacts.get(1).getGeneratedCode();
                 }
-                if (targetFiles.size() > 1) {
-                    Path p1 = Paths.get(targetFiles.get(1));
-                    if (Files.exists(p1)) {
-                        testCode = readFileSafely(p1);
+            } else {
+                List<String> targetFiles = status.getTargetFiles();
+                if (targetFiles != null && !targetFiles.isEmpty()) {
+                    Path p0 = Paths.get(targetFiles.get(0));
+                    if (Files.exists(p0)) {
+                        sourceCode = readFileSafely(p0);
+                    }
+                    if (targetFiles.size() > 1) {
+                        Path p1 = Paths.get(targetFiles.get(1));
+                        if (Files.exists(p1)) {
+                            testCode = readFileSafely(p1);
+                        }
                     }
                 }
             }
 
-            return ResponseEntity.ok(Map.of(
+            return ResponseEntity.ok(Map.<String, Object>of(
                     "originalCode", originalCode,
                     "sourceCode", sourceCode,
-                    "testCode", testCode));
+                    "testCode", testCode,
+                    "artifacts", artifacts));
         }).orElseGet(() -> ResponseEntity.notFound().build());
     }
 
@@ -137,15 +175,26 @@ public class DashboardController {
     }
 
     /**
-     * Valide une migration en mettant à jour son statut et en ajoutant éventuellement le contenu d'entraînement au vector store.
+     * Sauvegarde les artefacts générés au bon emplacement selon la configuration du projet (Group ID et chemin cible),
+     * met à jour le statut de validation et ajoute éventuellement le contenu d'entraînement au vector store.
      * @param id
      * @return
      */
     @PostMapping("/{id}/validate")
-    public ResponseEntity<Void> validateMigration(@PathVariable Long id) {
+    public ResponseEntity<?> validateMigration(@PathVariable Long id) {
         return repository.findById(id).map(status -> {
+            try {
+                dynamicRoutingService.saveArtifacts(status);
+            } catch (Exception e) {
+                return ResponseEntity.internalServerError()
+                        .body(Map.of("error", "Erreur lors de la sauvegarde des fichiers : " + e.getMessage()));
+            }
+
             status.setStatus(MigrationStatus.VALIDATED);
             status.setValidated(true);
+            if (status.getGeneratedArtifacts() != null) {
+                status.getGeneratedArtifacts().forEach(a -> a.setValidated(true));
+            }
 
             if (status.getLastCustomPrompt() != null && !status.getLastCustomPrompt().isEmpty()) {
                 try {
@@ -163,7 +212,7 @@ public class DashboardController {
             }
 
             repository.save(status);
-            return ResponseEntity.ok().<Void>build();
+            return ResponseEntity.ok().build();
         }).orElseGet(() -> ResponseEntity.notFound().build());
     }
 
