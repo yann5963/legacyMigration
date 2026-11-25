@@ -3,6 +3,7 @@ package com.migration.ai;
 import com.fasterxml.jackson.core.json.JsonReadFeature;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.migration.config.MigrationPromptsProperties;
 import com.migration.dto.FilePreAnalysisResult;
 import com.migration.dto.MultiFileConversionResponse;
 import com.migration.model.ProjectConfiguration;
@@ -27,11 +28,22 @@ import java.util.Map;
  */
 @Service
 @Slf4j
-@RequiredArgsConstructor
 public class MigrationAiService {
 
     private final ChatClient chatClient;
     private final ProjectConfigurationRepository projectConfigRepository;
+    private final MigrationPromptsProperties prompts;
+
+    public MigrationAiService(ChatClient chatClient, ProjectConfigurationRepository projectConfigRepository) {
+        this(chatClient, projectConfigRepository, new MigrationPromptsProperties());
+    }
+
+    public MigrationAiService(ChatClient chatClient, ProjectConfigurationRepository projectConfigRepository,
+                              MigrationPromptsProperties prompts) {
+        this.chatClient = chatClient;
+        this.projectConfigRepository = projectConfigRepository;
+        this.prompts = prompts == null ? new MigrationPromptsProperties() : prompts;
+    }
 
     /**
      * Méthode générique pour interroger le LLM avec un contexte et une requête.
@@ -94,8 +106,8 @@ public class MigrationAiService {
      * le doute au pipeline qui, lui, interrogera l'humain.
      */
     public String askForClarification(String context, String ambiguity) {
-        String systemPrompt = "Tu es un assistant de migration expert. Voici un problème ambigu que nous avons rencontré : {ambiguity}. Analyse le contexte : {context}. Propose la meilleure solution ou demande une confirmation explicite.";
-        return analyzeAndRefactor(systemPrompt, Map.of("ambiguity", ambiguity, "context", context), "Que devons-nous faire ?");
+        return analyzeAndRefactor(prompts.getClarification(), Map.of("ambiguity", ambiguity, "context", context),
+                "Que devons-nous faire ?");
     }
 
     /**
@@ -128,20 +140,7 @@ public class MigrationAiService {
         BeanOutputParser<FilePreAnalysisResult> outputParser =
                 new BeanOutputParser<>(FilePreAnalysisResult.class, lenientMapper);
 
-        String systemPromptText = """
-                Tu es un architecte logiciel senior spécialisé dans la migration d'applications legacy J2EE / Struts / JDBC / JSP vers Spring Boot 3.
-                Ta seule tâche est d'analyser le fichier source fourni et de répondre EXCLUSIVEMENT par un objet JSON valide (aucun texte, aucun commentaire, aucun markdown autour).
-
-                Valeurs attendues :
-                - architecturalRole : STRUTS_ACTION | BUSINESS_SERVICE | JDBC_DAO | DTO_MODEL | UTILITY | JSP_VIEW | CONFIG_XML | SERVLET | FILTER | TRIVIAL | OTHER
-                - migrationComplexity : TRIVIAL | LOW | MEDIUM | HIGH | CRITICAL
-                - functionalSummary : résumé métier et technique concis de 5 à 10 lignes en français
-                - targetSpringArtifact : RestController | Service | Repository | Entity/DTO | Thymeleaf/Front | Configuration | ToDelete
-                - detectedRisks : tableau JSON de chaînes décrivant les risques legacy (ex: ["SQL dynamique", "Couplage HttpSession"])
-                - suggestedFunctionalLot : domaine fonctionnel métier déduit (ex: "Facturation", "GestionServices")
-
-                {format}
-                """;
+        String systemPromptText = prompts.getPreAnalysis().getSystem();
 
         SystemPromptTemplate promptTemplate = new SystemPromptTemplate(systemPromptText);
         Message systemMessage = promptTemplate.createMessage(Map.of("format", outputParser.getFormat()));
@@ -154,29 +153,13 @@ public class MigrationAiService {
         /**
          * Contenu de l'utilisateur envoyé au modèle, incluant le nom du fichier, le type et le code source.
          */
-        String userContent = """
-                Analyse le fichier suivant :
-                - Nom : %s
-                - Type : %s
-
-                Code source :
-                ```
-                %s
-                ```
-
-                Réponds UNIQUEMENT par un objet JSON brut commençant par { et finissant par }, avec exactement ces 6 champs :
-                {
-                  "architecturalRole": "...",
-                  "migrationComplexity": "...",
-                  "functionalSummary": "...",
-                  "targetSpringArtifact": "...",
-                  "detectedRisks": ["..."],
-                  "suggestedFunctionalLot": "..."
-                }
-                """.formatted(fileName, fileType, contentToAnalyze);
+        String userContent = prompts.render(prompts.getPreAnalysis().getUser(), Map.of(
+                "fileName", fileName,
+                "fileType", fileType,
+                "content", contentToAnalyze));
         if (rootEntryPoints != null && !rootEntryPoints.isBlank()) {
-            userContent = "Contexte de flux : ce composant est sollicité depuis les points d'entrée suivants : "
-                    + rootEntryPoints + ".\n\n" + userContent;
+            userContent = prompts.render(prompts.getPreAnalysis().getRootContext(),
+                    Map.of("rootEntryPoints", rootEntryPoints)) + "\n\n" + userContent;
         }
         UserMessage userMessage = new UserMessage(userContent);
 
@@ -195,12 +178,8 @@ public class MigrationAiService {
             return outputParser.parse(extractJsonPayload(rawResponse));
         } catch (Exception firstError) {
             log.debug("Premier parsing JSON échoué pour {}, tentative de reformattage JSON...", fileName);
-            UserMessage repairMessage = new UserMessage("""
-                    Convertis l'analyse suivante en UN SEUL objet JSON valide (rien avant {, rien après }) respectant strictement ces 6 clés :
-                    architecturalRole, migrationComplexity, functionalSummary, targetSpringArtifact, detectedRisks (tableau de chaînes), suggestedFunctionalLot.
-
-                    Analyse à convertir :
-                    """ + rawResponse);
+            UserMessage repairMessage = new UserMessage(prompts.render(prompts.getPreAnalysis().getRepair(),
+                    Map.of("rawResponse", rawResponse)));
             Prompt repairPrompt = new Prompt(List.of(systemMessage, repairMessage), options);
             String repairedResponse = chatClient.call(repairPrompt).getResult().getOutput().getContent();
             return outputParser.parse(extractJsonPayload(repairedResponse));
@@ -223,13 +202,11 @@ public class MigrationAiService {
                 new BeanOutputParser<>(MultiFileConversionResponse.class, lenientMapper);
 
         String fullSystemPrompt = systemPrompt + "\n\n"
-                + "Réponds EXCLUSIVEMENT par un objet JSON valide (aucun texte, aucun markdown autour, aucun commentaire // ou /* */ en dehors des chaînes JSON, retours à la ligne et guillemets échappés dans `code`) respectant ce schéma :\n"
-                + outputParser.getFormat();
-
+                + prompts.render(prompts.getConversion().getResponseFormat(),
+                Map.of("format", outputParser.getFormat()));
         SystemMessage systemMessage = new SystemMessage(fullSystemPrompt);
-        UserMessage userMessage = new UserMessage(
-                "Convertis le code source legacy suivant en respectant toutes les directives ci-dessus :\n\n```java\n"
-                        + (sourceCode != null ? sourceCode : "") + "\n```");
+        UserMessage userMessage = new UserMessage(prompts.render(prompts.getConversion().getUser(),
+                Map.of("sourceCode", sourceCode != null ? sourceCode : "")));
 
         String modelToUse = resolveModel(model);
         OllamaOptions options = OllamaOptions.create()
@@ -246,12 +223,8 @@ public class MigrationAiService {
             return outputParser.parse(extractJsonPayload(rawResponse));
         } catch (Exception firstError) {
             log.debug("Premier parsing JSON multi-fichiers échoué, tentative de reformattage JSON...");
-            UserMessage repairMessage = new UserMessage("""
-                    Convertis la réponse suivante en UN SEUL objet JSON strictement valide (rien avant {, rien après }, aucun commentaire // ou /* */ hors des chaînes, guillemets et retours à la ligne échappés) respectant la structure :
-                    {"architecturalNotes": "...", "artifacts": [{"relativeTargetPath": "...", "artifactType": "...", "code": "..."}]}
-
-                    Réponse à convertir :
-                    """ + rawResponse);
+            UserMessage repairMessage = new UserMessage(prompts.render(prompts.getConversion().getRepair(),
+                    Map.of("rawResponse", rawResponse)));
             Prompt repairPrompt = new Prompt(List.of(systemMessage, repairMessage), options);
             String repairedResponse = chatClient.call(repairPrompt).getResult().getOutput().getContent();
             return outputParser.parse(extractJsonPayload(repairedResponse));

@@ -1,6 +1,7 @@
 package com.migration.pipeline;
 
 import com.migration.ai.MigrationAiService;
+import com.migration.config.MigrationPromptsProperties;
 import com.migration.parser.LegacyCodeParserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,6 +14,7 @@ public class RouteMigrationStep implements MigrationStep {
 
     private final LegacyCodeParserService parserService;
     private final MigrationAiService aiService;
+    private final MigrationPromptsProperties prompts;
 
     @Override
     public void execute() {
@@ -23,10 +25,10 @@ public class RouteMigrationStep implements MigrationStep {
 
         if (webXmlContent != null) {
             // 2. Demander au LLM de convertir le web.xml en squelettes de @RestController
-            String systemPrompt = "Tu es un expert Spring Boot. Convertis les mappings de servlets de ce web.xml J2EE en classes @RestController Spring Boot avec des annotations @RequestMapping ou @GetMapping/@PostMapping.";
+            String systemPrompt = prompts.getPipelineDirectives().getOrDefault("route", "");
 
             log.info("Demande au LLM de générer les contrôleurs REST...");
-            // TODO: Appeler aiService.analyzeAndRefactor(...) avec webXmlContent
+            aiService.analyzeAndRefactor(systemPrompt, java.util.Map.of(), webXmlContent);
 
             // Si des ambiguïtés (ex: plusieurs servlets pour la même route avec des conditions bizarres),
             // solliciter la validation humaine si configurée.

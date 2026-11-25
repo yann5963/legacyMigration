@@ -27,8 +27,6 @@ public class FunctionCallingConfig {
     public Function<WriteFileRequest, WriteFileResponse> writeGeneratedCodeFunction() {
         return request -> {
             log.info("Le LLM demande l'écriture d'un fichier : {}", request.relativePath());
-            // TODO: Implémenter la logique réelle d'écriture sur le disque dans le répertoire cible
-            // (utiliser la propriété migration.target.output-dir)
             try {
                 // Simuler l'écriture sur le disque
                 Files.write(Paths.get(request.relativePath()), request.content().getBytes());

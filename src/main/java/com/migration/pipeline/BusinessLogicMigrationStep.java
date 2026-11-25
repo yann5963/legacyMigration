@@ -3,6 +3,7 @@ package com.migration.pipeline;
 import com.github.javaparser.ast.CompilationUnit;
 import com.migration.ai.MigrationAiService;
 import com.migration.ai.RagService;
+import com.migration.config.MigrationPromptsProperties;
 import com.migration.parser.LegacyCodeParserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +19,7 @@ public class BusinessLogicMigrationStep implements MigrationStep {
     private final LegacyCodeParserService parserService;
     private final MigrationAiService aiService;
     private final RagService ragService;
+    private final MigrationPromptsProperties prompts;
 
     @Override
     public void execute() {
@@ -39,10 +41,11 @@ public class BusinessLogicMigrationStep implements MigrationStep {
             String context = ragService.findRelevantContext("JPA Entities for " + typeName, 3);
 
             // 3. Demander au LLM de refactoriser le code legacy en Service Spring Boot
-            String systemPrompt = "Tu es un développeur Java expert. Récris le code legacy J2EE suivant en une classe @Service Spring Boot moderne. Remplace les appels JDBC directs par l'utilisation des Repositories JPA fournis dans le contexte : \n" + context;
+            String systemPrompt = prompts.render(prompts.getPipelineDirectives().getOrDefault("business-logic", ""),
+                    java.util.Map.of("context", context));
 
             log.info("Refactoring de la classe {} via LLM...", typeName);
-            // TODO: Appeler aiService.analyzeAndRefactor(...)
+            aiService.analyzeAndRefactor(systemPrompt, java.util.Map.of(), sourceCode);
         }
 
         log.info("--- Fin de la migration de la logique métier ---");

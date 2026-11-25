@@ -3,6 +3,7 @@ package com.migration.service;
 import com.migration.model.ContextMode;
 import com.migration.model.ContextReference;
 import com.migration.parser.LegacyCodeParserService;
+import com.migration.config.MigrationPromptsProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -17,11 +18,20 @@ import java.util.List;
  * PromptBuilderService
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class PromptBuilderService {
 
     private final LegacyCodeParserService parserService;
+    private final MigrationPromptsProperties prompts;
+
+    public PromptBuilderService(LegacyCodeParserService parserService) {
+        this(parserService, new MigrationPromptsProperties());
+    }
+
+    public PromptBuilderService(LegacyCodeParserService parserService, MigrationPromptsProperties prompts) {
+        this.parserService = parserService;
+        this.prompts = prompts == null ? new MigrationPromptsProperties() : prompts;
+    }
 
     /**
      * Résout les fichiers de contexte pertinents et construit un prompt à partir de leur contenu.
@@ -32,8 +42,7 @@ public class PromptBuilderService {
         if (contextFiles == null || contextFiles.isEmpty()) {
             return "";
         }
-        StringBuilder sb = new StringBuilder("\n\n### Fichiers de référence pertinents\n");
-        sb.append("Utilise ces fichiers de référence comme source de vérité pour les types, contrats, annotations et conventions. Ne génère QUE le code du fichier cible demandé.\n\n");
+        StringBuilder sb = new StringBuilder(prompts.getContextHeader()).append("\n\n");
         for (ContextReference ref : contextFiles) {
             try {
                 Path path = Paths.get(ref.getFilePath());

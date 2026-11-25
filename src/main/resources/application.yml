@@ -1,4 +1,6 @@
 spring:
+  config:
+    import: optional:classpath:prompts.yml,optional:file:./config/prompts.yml
   application:
     name: migration-tool
 

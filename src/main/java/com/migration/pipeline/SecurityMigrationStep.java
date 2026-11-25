@@ -1,6 +1,7 @@
 package com.migration.pipeline;
 
 import com.migration.ai.MigrationAiService;
+import com.migration.config.MigrationPromptsProperties;
 import com.migration.parser.LegacyCodeParserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,6 +14,7 @@ public class SecurityMigrationStep implements MigrationStep {
 
     private final LegacyCodeParserService parserService;
     private final MigrationAiService aiService;
+    private final MigrationPromptsProperties prompts;
 
     @Override
     public void execute() {
@@ -23,10 +25,12 @@ public class SecurityMigrationStep implements MigrationStep {
         String securityContextInfo = "Extraction simulée des rôles : ADMIN, USER, MANAGER. Filtrage sur /admin/*";
 
         // 2. Générer la configuration Spring Security
-        String systemPrompt = "Génère une classe de configuration Spring Security (SecurityFilterChain) basée sur ces règles de sécurité legacy : {rules}. Utilise les annotations @PreAuthorize si pertinent pour les 3 profils identifiés.";
+        String systemPrompt = prompts.render(prompts.getPipelineDirectives().getOrDefault("security", ""),
+                java.util.Map.of("rules", securityContextInfo));
 
         log.info("Génération de la configuration Spring Security...");
-        // TODO: Appeler aiService.analyzeAndRefactor(...)
+        aiService.analyzeAndRefactor(systemPrompt, java.util.Map.of("rules", securityContextInfo),
+                securityContextInfo);
 
         log.info("--- Fin de la migration de la sécurité ---");
     }

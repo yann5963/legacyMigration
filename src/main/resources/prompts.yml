@@ -1,0 +1,148 @@
+migration:
+  prompts:
+    clarification: |
+      Tu es un assistant de migration expert. Voici un problème ambigu que nous avons rencontré : {ambiguity}. Analyse le contexte : {context}. Propose la meilleure solution ou demande une confirmation explicite.
+    context-header: |
+
+      ### Fichiers de référence pertinents
+      Utilise ces fichiers de référence comme source de vérité pour les types, contrats, annotations et conventions. Ne génère QUE le code du fichier cible demandé.
+    rag-header: |
+
+      Contexte lié et exemples validés précédemment :
+    metadata: |
+      - **Rôle architectural détecté** : {role}
+      - **Artefact Spring cible** : {artifact}
+      - **Complexité estimée** : {complexity}
+      - **Package racine cible** : `{basePackage}`
+    entry-point-header: |
+      ### Flux métiers racines
+    entry-point-batch: |
+      - Flux batch (main) : privilégie Spring Batch / `CommandLineRunner` pour les points d'entrée batch.
+    entry-point-web: |
+      - Flux Web/Struts : privilégie Spring Web MVC / REST pour le routage des points d'entrée Web.
+    entry-point-shared: |
+      - Préserve le rôle propre de ce composant ; les services et repositories partagés restent réutilisables par tous ces flux.
+    role-header: |
+      ### Directives architecturales ciblées
+    role-directives:
+      JDBC_DAO: |
+        - **Extraction SQL & Persistance (`JDBC_DAO`)** : Extrais toutes les requêtes SQL vers un `@Repository` Spring Data JPA ou `JdbcClient` (paramètres nommés obligatoires, aucun `Connection`/`Statement`/`ResultSet` manuel).
+        - **Projections & DTO** : Crée des `record` Java immuables dédiés pour toutes les projections SQL, critères de recherche et résultats retournés.
+      STRUTS_ACTION: |
+        - **Séparation HTTP / Métier (`{role}`)** : Sépare strictement le routage HTTP (`@RestController` ou `@Controller` avec `@RequestMapping`) de la logique métier (déléguée à un `@Service` dédié).
+        - **Contrats d'API** : Définis des `record` DTO distincts pour les requêtes entrantes (avec validation Jakarta `@Valid` si pertinent) et les réponses sortantes.
+      SERVLET: |
+        - **Séparation HTTP / Métier (`{role}`)** : Sépare strictement le routage HTTP (`@RestController` ou `@Controller` avec `@RequestMapping`) de la logique métier (déléguée à un `@Service` dédié).
+        - **Contrats d'API** : Définis des `record` DTO distincts pour les requêtes entrantes (avec validation Jakarta `@Valid` si pertinent) et les réponses sortantes.
+      UTILITY: |
+        - **Suppression du Singleton / Utilitaire stateful (`{role}`)** : Convertis cette classe en `@Component` ou `@Service` Spring géré par injection de dépendances.
+        - **Stateless obligatoire** : Aucun état mutable partagé (`static` non `final` strictement interdit).
+      SINGLETON: |
+        - **Suppression du Singleton / Utilitaire stateful (`{role}`)** : Convertis cette classe en `@Component` ou `@Service` Spring géré par injection de dépendances.
+        - **Stateless obligatoire** : Aucun état mutable partagé (`static` non `final` strictement interdit).
+      DTO_MODEL: |
+        - **Modèle immuable / Entité (`DTO_MODEL`)** : Convertis directement ce modèle en `record` Java immuable. Si une persistance base de données est détectée, produis une classe JPA `@Entity` proprement annotée (constructeur sans argument, identifiant `@Id`, sans logique métier) et un `record` DTO associé.
+      BUSINESS_SERVICE: |
+        - **Service métier (`BUSINESS_SERVICE`)** : Produis un `@Service` Spring Boot avec injection par constructeur (`final` fields), transactions `@Transactional` là où nécessaire, et des `record` DTO pour les échanges.
+      JSP_VIEW: |
+        - **Vue Web (`JSP_VIEW`)** : Migre la vue JSP vers un template Thymeleaf propre (`src/main/resources/templates/...`) sans scriptlets Java.
+      CONFIG_XML: |
+        - **Configuration (`CONFIG_XML`)** : Traduis la configuration XML legacy en classe `@Configuration` Java ou propriétés `application.yml` Spring Boot.
+      REPOSITORY: |
+        - **Extraction SQL & Persistance (`JDBC_DAO`)** : Extrais toutes les requêtes SQL vers un `@Repository` Spring Data JPA ou `JdbcClient` (paramètres nommés obligatoires, aucun `Connection`/`Statement`/`ResultSet` manuel).
+        - **Projections & DTO** : Crée des `record` Java immuables dédiés pour toutes les projections SQL, critères de recherche et résultats retournés.
+      CONTROLLER: |
+        - **Séparation HTTP / Métier (`{role}`)** : Sépare strictement le routage HTTP (`@RestController` ou `@Controller` avec `@RequestMapping`) de la logique métier (déléguée à un `@Service` dédié).
+        - **Contrats d'API** : Définis des `record` DTO distincts pour les requêtes entrantes (avec validation Jakarta `@Valid` si pertinent) et les réponses sortantes.
+      DEFAULT: |
+        - Convertis ce composant vers une architecture Spring Boot 3 idiomatique sous le package `{basePackage}`, en respectant le principe de responsabilité unique.
+    risk-header: |
+      ### Garde-fous et risques à corriger impérativement
+    risk-detected: |
+      Les risques legacy suivants ont été identifiés lors de la pré-analyse et **DOIVENT** être éliminés dans le code généré :
+    risk-none: |
+      - Aucun risque spécifique remonté en pré-analyse ; applique les standards de sécurité Spring Boot 3 (requêtes paramétrées, stateless, injection par constructeur).
+    risk-directives: |
+      - Directives associées : supprime tout couplage à `HttpSession` / `ServletContext`, remplace toute concaténation SQL par des paramètres nommés (`:param` / `?`), et supprime tout singleton manuel (`getInstance()`, champs `static` mutables).
+    splitting-header: |
+      ### Règle de découpage multi-fichiers (1 -> N)
+    splitting-rules: |
+      - Tu **DOIS** produire autant de fichiers distincts que l'architecture Spring Boot 3 l'exige (séparation stricte `Controller` / `Service` / `Repository` / `DTO` / `Entity` / `Config`), chacun dans son package cible cohérent.
+      - Exemple de chemins cibles (`relativeTargetPath`) : `src/main/java/{basePackagePath}/service/...`, `src/main/java/{basePackagePath}/dto/...`, `src/main/java/{basePackagePath}/repository/...`, `src/main/java/{basePackagePath}/controller/...`.
+      - Pour chaque fichier généré, renseigne `relativeTargetPath`, `artifactType` (`CONTROLLER`, `SERVICE`, `REPOSITORY`, `DTO`, `ENTITY`, `CONFIG`, `VIEW`, `TEST`) et `code` complet et compilable.
+    pre-analysis:
+      system: |
+        Tu es un architecte logiciel senior spécialisé dans la migration d'applications legacy J2EE / Struts / JDBC / JSP vers Spring Boot 3.
+        Ta seule tâche est d'analyser le fichier source fourni et de répondre EXCLUSIVEMENT par un objet JSON valide (aucun texte, aucun commentaire, aucun markdown autour).
+
+        Valeurs attendues :
+        - architecturalRole : STRUTS_ACTION | BUSINESS_SERVICE | JDBC_DAO | DTO_MODEL | UTILITY | JSP_VIEW | CONFIG_XML | SERVLET | FILTER | TRIVIAL | OTHER
+        - migrationComplexity : TRIVIAL | LOW | MEDIUM | HIGH | CRITICAL
+        - functionalSummary : résumé métier et technique concis de 5 à 10 lignes en français
+        - targetSpringArtifact : RestController | Service | Repository | Entity/DTO | Thymeleaf/Front | Configuration | ToDelete
+        - detectedRisks : tableau JSON de chaînes décrivant les risques legacy (ex: ["SQL dynamique", "Couplage HttpSession"])
+        - suggestedFunctionalLot : domaine fonctionnel métier déduit (ex: "Facturation", "GestionServices")
+
+        {format}
+      user: |
+        Analyse le fichier suivant :
+        - Nom : {fileName}
+        - Type : {fileType}
+
+        Code source :
+        ```
+        {content}
+        ```
+
+        Réponds UNIQUEMENT par un objet JSON brut commençant par { et finissant par }, avec exactement ces 6 champs :
+        {
+          "architecturalRole": "...",
+          "migrationComplexity": "...",
+          "functionalSummary": "...",
+          "targetSpringArtifact": "...",
+          "detectedRisks": ["..."],
+          "suggestedFunctionalLot": "..."
+        }
+      root-context: |
+        Contexte de flux : ce composant est sollicité depuis les points d'entrée suivants : {rootEntryPoints}.
+      repair: |
+        Convertis l'analyse suivante en UN SEUL objet JSON valide (rien avant {, rien après }) respectant strictement ces 6 clés :
+        architecturalRole, migrationComplexity, functionalSummary, targetSpringArtifact, detectedRisks (tableau de chaînes), suggestedFunctionalLot.
+
+        Analyse à convertir :
+        {rawResponse}
+    conversion:
+      response-format: |
+        Réponds EXCLUSIVEMENT par un objet JSON valide (aucun texte, aucun markdown autour, aucun commentaire // ou /* */ en dehors des chaînes JSON, retours à la ligne et guillemets échappés dans `code`) respectant ce schéma :
+        {format}
+      user: |
+        Convertis le code source legacy suivant en respectant toutes les directives ci-dessus :
+
+        ```java
+        {sourceCode}
+        ```
+      repair: |
+        Convertis la réponse suivante en UN SEUL objet JSON strictement valide (rien avant {, rien après }, aucun commentaire // ou /* */ hors des chaînes, guillemets et retours à la ligne échappés) respectant la structure :
+        {"architecturalNotes": "...", "artifacts": [{"relativeTargetPath": "...", "artifactType": "...", "code": "..."}]}
+
+        Réponse à convertir :
+        {rawResponse}
+      skeleton: |
+        Tu es un développeur Java expert. Récris le squelette de classe legacy J2EE suivant en une classe Spring Boot moderne. Ne garde que la structure (annotations, imports, variables globales, signatures de méthodes vides). Ne fournis pas les corps des méthodes et ne fournis pas de tests. Fournis uniquement le code dans un bloc ```java ... ```.
+      method: |
+        Convertis uniquement cette méthode en utilisant l'API Spring Data, sachant qu'elle appartient à la classe cible dont le squelette est :
+        {targetSkeleton}
+
+        Ne renvoie QUE la méthode convertie dans un bloc ```java ... ```. N'inclus pas la classe entière.
+      test: |
+        Génère une classe de test JUnit 5 avec Mockito pour le code Spring Boot suivant. Fournis uniquement le code dans un bloc ```java ... ```.
+    pipeline-directives:
+      business-logic: |
+        Tu es un développeur Java expert. Récris le code legacy J2EE suivant en une classe @Service Spring Boot moderne. Remplace les appels JDBC directs par l'utilisation des Repositories JPA fournis dans le contexte :
+        {context}
+      database: |
+        Tu es un expert Spring Boot. Convertis le schéma DDL suivant en entités JPA Spring Boot et crée les interfaces JpaRepository correspondantes.
+      route: |
+        Tu es un expert Spring Boot. Convertis les mappings de servlets de ce web.xml J2EE en classes @RestController Spring Boot avec des annotations @RequestMapping ou @GetMapping/@PostMapping.
+      security: |
+        Génère une classe de configuration Spring Security (SecurityFilterChain) basée sur ces règles de sécurité legacy : {rules}. Utilise les annotations @PreAuthorize si pertinent pour les 3 profils identifiés.

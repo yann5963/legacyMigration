@@ -4,6 +4,7 @@ import com.github.javaparser.StaticJavaParser;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.migration.ai.MigrationAiService;
+import com.migration.config.MigrationPromptsProperties;
 import com.migration.dto.MultiFileConversionResponse;
 import com.migration.model.ChunkStatus;
 import com.migration.model.FileChunkStatus;
@@ -43,6 +44,7 @@ public class AsyncMigrationRetryService {
     private final VectorStore vectorStore;
     private final LegacyCodeParserService parserService;
     private final DynamicPromptBuilderService dynamicPromptBuilderService;
+    private final MigrationPromptsProperties prompts;
 
     @Value("${migration.target.output-dir}")
     private String outputDir;
@@ -100,8 +102,7 @@ public class AsyncMigrationRetryService {
         if (contextFiles == null || contextFiles.isEmpty()) {
             return "";
         }
-        StringBuilder sb = new StringBuilder("\n\n### Fichiers de référence pertinents\n");
-        sb.append("Utilise ces fichiers de référence comme source de vérité pour les types, contrats, annotations et conventions. Ne génère QUE le code du fichier cible demandé.\n\n");
+        StringBuilder sb = new StringBuilder(prompts.getContextHeader()).append("\n\n");
         for (ContextReference ref : contextFiles) {
             try {
                 Path path = Paths.get(ref.getFilePath());
@@ -166,7 +167,7 @@ public class AsyncMigrationRetryService {
         structureChunk.setStatus(ChunkStatus.CONVERTING);
         repository.save(status);
 
-        String skeletonPrompt = "Tu es un développeur Java expert. Récris le squelette de classe legacy J2EE suivant en une classe Spring Boot moderne. Ne garde que la structure (annotations, imports, variables globales, signatures de méthodes vides). Ne fournis pas les corps des méthodes et ne fournis pas de tests. Fournis uniquement le code dans un bloc ```java ... ```.";
+        String skeletonPrompt = prompts.getConversion().getSkeleton();
         skeletonPrompt = appendRagContext(skeletonPrompt, classStructure);
 
         skeletonPrompt += resolveContextFiles(status.getContextFiles());
@@ -185,7 +186,8 @@ public class AsyncMigrationRetryService {
             chunk.setStatus(ChunkStatus.CONVERTING);
             repository.save(status);
 
-            String methodPrompt = "Convertis uniquement cette méthode en utilisant l'API Spring Data, sachant qu'elle appartient à la classe cible dont le squelette est :\n" + targetSkeleton + "\n\nNe renvoie QUE la méthode convertie dans un bloc ```java ... ```. N'inclus pas la classe entière.";
+            String methodPrompt = prompts.render(prompts.getConversion().getMethod(),
+                    Map.of("targetSkeleton", targetSkeleton));
             methodPrompt += resolveContextFiles(status.getContextFiles());
 
             String methodResponse = aiService.analyzeAndRefactor(methodPrompt, Map.of(), chunk.getOriginalCode(), customPrompt, llmModel);
@@ -216,7 +218,7 @@ public class AsyncMigrationRetryService {
         String finalSourceCode = targetCu.toString();
 
         // Generate Test for final reassembled code
-        String testPrompt = "Génère une classe de test JUnit 5 avec Mockito pour le code Spring Boot suivant. Fournis uniquement le code dans un bloc ```java ... ```.";
+        String testPrompt = prompts.getConversion().getTest();
         String testResponse = aiService.analyzeAndRefactor(testPrompt, Map.of(), finalSourceCode, customPrompt, llmModel);
         String finalTestCode = extractCodeBlock(testResponse);
 
@@ -230,7 +232,7 @@ public class AsyncMigrationRetryService {
             List<Document> similarDocs = vectorStore.similaritySearch(SearchRequest.query(contentToSearch).withTopK(2));
             if (!similarDocs.isEmpty()) {
                 String context = similarDocs.stream().map(Document::getContent).collect(Collectors.joining("\n---\n"));
-                return prompt + "\n\nContexte lié et exemples validés précédemment :\n" + context;
+                return prompt + prompts.getRagHeader() + context;
             }
         } catch (Exception ex) {
             log.warn("Impossible de joindre le VectorStore pour le RAG.", ex);

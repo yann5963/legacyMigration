@@ -4,6 +4,7 @@ import com.migration.model.ContextReference;
 import com.migration.model.GeneratedArtifact;
 import com.migration.model.MigrationFileStatus;
 import com.migration.model.ProjectConfiguration;
+import com.migration.config.MigrationPromptsProperties;
 import com.migration.repository.MigrationFileStatusRepository;
 import com.migration.repository.ProjectConfigurationRepository;
 import lombok.RequiredArgsConstructor;
@@ -13,6 +14,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -22,13 +24,26 @@ import java.util.stream.Collectors;
  * de pré-analyse sémantique, des risques détectés et du contexte des dépendances.
  */
 @Service
-@RequiredArgsConstructor
 public class DynamicPromptBuilderService {
 
     private static final String DEFAULT_BASE_PACKAGE = "com.migration.target";
 
     private final MigrationFileStatusRepository fileStatusRepository;
     private final ProjectConfigurationRepository projectConfigRepository;
+    private final MigrationPromptsProperties prompts;
+
+    public DynamicPromptBuilderService(MigrationFileStatusRepository fileStatusRepository,
+                                       ProjectConfigurationRepository projectConfigRepository) {
+        this(fileStatusRepository, projectConfigRepository, new MigrationPromptsProperties());
+    }
+
+    public DynamicPromptBuilderService(MigrationFileStatusRepository fileStatusRepository,
+                                       ProjectConfigurationRepository projectConfigRepository,
+                                       MigrationPromptsProperties prompts) {
+        this.fileStatusRepository = fileStatusRepository;
+        this.projectConfigRepository = projectConfigRepository;
+        this.prompts = prompts == null ? new MigrationPromptsProperties() : prompts;
+    }
 
     /**
      * Assemble dynamiquement le prompt de conversion pour un fichier donné et ses dépendances.
@@ -69,23 +84,26 @@ public class DynamicPromptBuilderService {
         String roots = fileStatus.getRootEntryPoints().trim();
         String types = normalize(fileStatus.getRootEntryPointTypes());
         String rootNames = normalize(roots);
-        sb.append("### Flux métiers racines\n").append(roots).append("\n");
+        sb.append(prompts.getEntryPointHeader()).append("\n").append(roots).append("\n");
         List<String> rootFiles = List.of(rootNames.replace('\\', '/').split(",\\s*"));
         if (types.contains("BATCH") || rootFiles.stream()
                 .anyMatch(root -> root.equals("MAIN.JAVA") || root.endsWith("/MAIN.JAVA"))) {
-            sb.append("- Flux batch (main) : privilégie Spring Batch / `CommandLineRunner` pour les points d'entrée batch.\n");
+            sb.append(prompts.getEntryPointBatch()).append("\n");
         }
         if (types.contains("WEB") || rootNames.contains("WEB.XML") || rootNames.contains("STRUTS-CONFIG.XML")
                 || rootFiles.stream().anyMatch(root -> root.matches(".*(?:SERVLET|ACTION)\\.JAVA"))) {
-            sb.append("- Flux Web/Struts : privilégie Spring Web MVC / REST pour le routage des points d'entrée Web.\n");
+            sb.append(prompts.getEntryPointWeb()).append("\n");
         }
-        sb.append("- Préserve le rôle propre de ce composant ; les services et repositories partagés restent réutilisables par tous ces flux.\n\n");
+        sb.append(prompts.getEntryPointShared()).append("\n\n");
     }
 
     private void appendMetadataSection(StringBuilder sb, MigrationFileStatus fileStatus, String basePackage) {
-        sb.append("- **Rôle architectural détecté** : ").append(orDefault(fileStatus.getArchitecturalRole(), "NON_ANALYSE")).append("\n");
-        sb.append("- **Artefact Spring cible** : ").append(orDefault(fileStatus.getTargetSpringArtifact(), "À déterminer")).append("\n");
-        sb.append("- **Complexité estimée** : ").append(orDefault(fileStatus.getMigrationComplexity(), "INCONNUE")).append("\n");
+        sb.append(prompts.render(prompts.getMetadata(), Map.of(
+                "role", orDefault(fileStatus.getArchitecturalRole(), "NON_ANALYSE"),
+                "artifact", orDefault(fileStatus.getTargetSpringArtifact(), "À déterminer"),
+                "complexity", orDefault(fileStatus.getMigrationComplexity(), "INCONNUE"),
+                "lot", orDefault(fileStatus.getSuggestedFunctionalLot(), ""),
+                "basePackage", basePackage))).append("\n");
         if (isNotBlank(fileStatus.getSuggestedFunctionalLot())) {
             sb.append("- **Lot fonctionnel suggéré** : ").append(fileStatus.getSuggestedFunctionalLot().trim()).append("\n");
         }
@@ -98,29 +116,8 @@ public class DynamicPromptBuilderService {
     }
 
     private void appendRoleDirectives(StringBuilder sb, String role, String targetArtifact, String rawTargetArtifact, String basePackage) {
-        sb.append("### Directives architecturales ciblées\n");
-
-        if ("JDBC_DAO".equals(role) || targetArtifact.contains("REPOSITORY")) {
-            sb.append("- **Extraction SQL & Persistance (`JDBC_DAO`)** : Extrais toutes les requêtes SQL vers un `@Repository` Spring Data JPA ou `JdbcClient` (paramètres nommés obligatoires, aucun `Connection`/`Statement`/`ResultSet` manuel).\n");
-            sb.append("- **Projections & DTO** : Crée des `record` Java immuables dédiés pour toutes les projections SQL, critères de recherche et résultats retournés.\n");
-        } else if ("STRUTS_ACTION".equals(role) || "SERVLET".equals(role) || targetArtifact.contains("CONTROLLER")) {
-            sb.append("- **Séparation HTTP / Métier (`").append(role.isEmpty() ? "CONTROLLER" : role).append("`)** : Sépare strictement le routage HTTP (`@RestController` ou `@Controller` avec `@RequestMapping`) de la logique métier (déléguée à un `@Service` dédié).\n");
-            sb.append("- **Contrats d'API** : Définis des `record` DTO distincts pour les requêtes entrantes (avec validation Jakarta `@Valid` si pertinent) et les réponses sortantes.\n");
-        } else if ("UTILITY".equals(role) || "SINGLETON".equals(role)) {
-            sb.append("- **Suppression du Singleton / Utilitaire stateful (`").append(role).append("`)** : Convertis cette classe en `@Component` ou `@Service` Spring géré par injection de dépendances.\n");
-            sb.append("- **Stateless obligatoire** : Aucun état mutable partagé (`static` non `final` strictement interdit).\n");
-        } else if ("DTO_MODEL".equals(role) || targetArtifact.contains("ENTITY") || targetArtifact.contains("DTO")) {
-            sb.append("- **Modèle immuable / Entité (`DTO_MODEL`)** : Convertis directement ce modèle en `record` Java immuable. Si une persistance base de données est détectée, produis une classe JPA `@Entity` proprement annotée (constructeur sans argument, identifiant `@Id`, sans logique métier) et un `record` DTO associé.\n");
-        } else if ("BUSINESS_SERVICE".equals(role)) {
-            sb.append("- **Service métier (`BUSINESS_SERVICE`)** : Produis un `@Service` Spring Boot avec injection par constructeur (`final` fields), transactions `@Transactional` là où nécessaire, et des `record` DTO pour les échanges.\n");
-        } else if ("JSP_VIEW".equals(role) || targetArtifact.contains("THYMELEAF")) {
-            sb.append("- **Vue Web (`JSP_VIEW`)** : Migre la vue JSP vers un template Thymeleaf propre (`src/main/resources/templates/...`) sans scriptlets Java.\n");
-        } else if ("CONFIG_XML".equals(role) || targetArtifact.contains("CONFIGURATION")) {
-            sb.append("- **Configuration (`CONFIG_XML`)** : Traduis la configuration XML legacy en classe `@Configuration` Java ou propriétés `application.yml` Spring Boot.\n");
-        } else {
-            sb.append("- Convertis ce composant vers une architecture Spring Boot 3 idiomatique sous le package `")
-              .append(basePackage).append("`, en respectant le principe de responsabilité unique.\n");
-        }
+        sb.append(prompts.getRoleHeader()).append("\n");
+        sb.append(prompts.roleDirective(role, targetArtifact, basePackage));
 
         if (isNotBlank(rawTargetArtifact)) {
             sb.append("- Artefact principal attendu : `").append(rawTargetArtifact.trim()).append("`.\n");
@@ -129,15 +126,15 @@ public class DynamicPromptBuilderService {
     }
 
     private void appendRiskGuardrails(StringBuilder sb, String detectedRisks) {
-        sb.append("### Garde-fous et risques à corriger impérativement\n");
+        sb.append(prompts.getRiskHeader()).append("\n");
         if (isNotBlank(detectedRisks)) {
-            sb.append("Les risques legacy suivants ont été identifiés lors de la pré-analyse et **DOIVENT** être éliminés dans le code généré :\n");
+            sb.append(prompts.getRiskDetected()).append("\n");
             for (String risk : parseRisks(detectedRisks)) {
                 sb.append("- ").append(risk).append("\n");
             }
-            sb.append("- Directives associées : supprime tout couplage à `HttpSession` / `ServletContext`, remplace toute concaténation SQL par des paramètres nommés (`:param` / `?`), et supprime tout singleton manuel (`getInstance()`, champs `static` mutables).\n");
+            sb.append(prompts.getRiskDirectives()).append("\n");
         } else {
-            sb.append("- Aucun risque spécifique remonté en pré-analyse ; applique les standards de sécurité Spring Boot 3 (requêtes paramétrées, stateless, injection par constructeur).\n");
+            sb.append(prompts.getRiskNone()).append("\n");
         }
         sb.append("\n");
     }
@@ -185,14 +182,8 @@ public class DynamicPromptBuilderService {
     }
 
     private void appendMultiFileSplittingRules(StringBuilder sb, String basePackagePath) {
-        sb.append("### Règle de découpage multi-fichiers (1 -> N)\n");
-        sb.append("- Tu **DOIS** produire autant de fichiers distincts que l'architecture Spring Boot 3 l'exige (séparation stricte `Controller` / `Service` / `Repository` / `DTO` / `Entity` / `Config`), chacun dans son package cible cohérent.\n");
-        sb.append("- Exemple de chemins cibles (`relativeTargetPath`) : `src/main/java/").append(basePackagePath)
-          .append("/service/...`, `src/main/java/").append(basePackagePath)
-          .append("/dto/...`, `src/main/java/").append(basePackagePath)
-          .append("/repository/...`, `src/main/java/").append(basePackagePath)
-          .append("/controller/...`.\n");
-        sb.append("- Pour chaque fichier généré, renseigne `relativeTargetPath`, `artifactType` (`CONTROLLER`, `SERVICE`, `REPOSITORY`, `DTO`, `ENTITY`, `CONFIG`, `VIEW`, `TEST`) et `code` complet et compilable.\n");
+        sb.append(prompts.getSplittingHeader()).append("\n");
+        sb.append(prompts.render(prompts.getSplittingRules(), Map.of("basePackagePath", basePackagePath))).append("\n");
     }
 
     private List<String> extractMigratedTargetPaths(MigrationFileStatus dep) {
