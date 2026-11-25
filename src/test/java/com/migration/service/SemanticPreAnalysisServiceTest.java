@@ -43,6 +43,47 @@ class SemanticPreAnalysisServiceTest {
     }
 
     @Test
+    void unreachableFileIsMarkedWithoutReadingSourceOrCallingLlm() {
+        MigrationFileStatus status = MigrationFileStatus.builder()
+                .sourceFile("Unused.java").reachable(false).status(MigrationStatus.SCANNED).build();
+        when(repository.findByStatusIn(anyCollection())).thenReturn(List.of(status));
+
+        preAnalysisService.analyzeAllScannedFiles(null);
+
+        verifyNoInteractions(aiService);
+        assertEquals(MigrationStatus.ANALYZED, status.getStatus());
+        assertEquals("DEAD_CODE_CANDIDATE", status.getArchitecturalRole());
+        assertEquals("TRIVIAL", status.getMigrationComplexity());
+        assertEquals("ToDelete", status.getTargetSpringArtifact());
+        assertEquals("Fichier non atteint depuis les points d'entrée identifiés (code mort potentiel).",
+                status.getFunctionalSummary());
+    }
+
+    @Test
+    void analyzesEntryPointsFirstThenDescendingLayersWithFlowContext() throws Exception {
+        Path source = tempDir.resolve("flow.xml");
+        Files.writeString(source, "<flow/>");
+        MigrationFileStatus leaf = MigrationFileStatus.builder().sourceFile("leaf.xml").layer(1)
+                .absolutePath(source.toString()).fileType("XML").build();
+        MigrationFileStatus top = MigrationFileStatus.builder().sourceFile("top.xml").layer(5)
+                .rootEntryPoints("web.xml").absolutePath(source.toString()).fileType("XML").build();
+        MigrationFileStatus entry = MigrationFileStatus.builder().sourceFile("web.xml").layer(2)
+                .entryPoint(true).absolutePath(source.toString()).fileType("XML").build();
+        when(repository.findByStatusIn(anyCollection())).thenReturn(List.of(leaf, top, entry));
+        FilePreAnalysisResult result = new FilePreAnalysisResult("CONFIG_XML", "LOW", "Flow",
+                "Configuration", List.of(), "Flow");
+        when(aiService.preAnalyzeFile(anyString(), anyString(), anyString(), isNull())).thenReturn(result);
+        when(aiService.preAnalyzeFile(anyString(), anyString(), anyString(), isNull(), anyString())).thenReturn(result);
+
+        preAnalysisService.analyzeAllScannedFiles(null);
+
+        var order = inOrder(aiService);
+        order.verify(aiService).preAnalyzeFile(eq("web.xml"), eq("XML"), anyString(), isNull());
+        order.verify(aiService).preAnalyzeFile(eq("top.xml"), eq("XML"), anyString(), isNull(), eq("web.xml"));
+        order.verify(aiService).preAnalyzeFile(eq("leaf.xml"), eq("XML"), anyString(), isNull());
+    }
+
+    @Test
     void testTrivialDto_IsDetectedByJavaParserWithoutCallingLlm() throws Exception {
         String dtoCode = """
                 package com.legacy.billing.dto;

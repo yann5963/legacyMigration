@@ -108,6 +108,20 @@ public class MigrationAiService {
      * @return Résultat structuré {@link FilePreAnalysisResult}.
      */
     public FilePreAnalysisResult preAnalyzeFile(String fileName, String fileType, String sourceCode, String model) {
+        return preAnalyzeFile(fileName, fileType, sourceCode, model, null);
+    }
+
+    /**
+     * Pré-analyse sémantique structurée d'un fichier legacy via Spring AI (BeanOutputParser).
+     * @param fileName Nom du fichier source.
+     * @param fileType Type/extension du fichier (JAVA, JSP, XML, PROPERTIES...).
+     * @param sourceCode Contenu du fichier.
+     * @param model Modèle Ollama optionnel (sinon modèle par défaut configuré).
+     * @param rootEntryPoints Points d'entrée racine pour l'analyse (optionnel).
+     * @return Résultat structuré {@link FilePreAnalysisResult}.
+     */
+    public FilePreAnalysisResult preAnalyzeFile(String fileName, String fileType, String sourceCode, String model,
+                                               String rootEntryPoints) {
         log.debug("Pré-analyse sémantique LLM du fichier {} ({})...", fileName, fileType);
 
         ObjectMapper lenientMapper = createLenientObjectMapper();
@@ -137,6 +151,9 @@ public class MigrationAiService {
                 ? sourceCode.substring(0, 8000) + "\n\n/* ... contenu tronqué pour pré-analyse ... */"
                 : (sourceCode != null ? sourceCode : "");
 
+        /**
+         * Contenu de l'utilisateur envoyé au modèle, incluant le nom du fichier, le type et le code source.
+         */
         String userContent = """
                 Analyse le fichier suivant :
                 - Nom : %s
@@ -157,6 +174,10 @@ public class MigrationAiService {
                   "suggestedFunctionalLot": "..."
                 }
                 """.formatted(fileName, fileType, contentToAnalyze);
+        if (rootEntryPoints != null && !rootEntryPoints.isBlank()) {
+            userContent = "Contexte de flux : ce composant est sollicité depuis les points d'entrée suivants : "
+                    + rootEntryPoints + ".\n\n" + userContent;
+        }
         UserMessage userMessage = new UserMessage(userContent);
 
         String modelToUse = resolveModel(model);
@@ -237,6 +258,10 @@ public class MigrationAiService {
         }
     }
 
+    /**
+     * Crée un ObjectMapper configuré pour être tolérant aux variations de format JSON.
+     * @return Un ObjectMapper configuré pour la désérialisation JSON tolérante.    
+     */
     private ObjectMapper createLenientObjectMapper() {
         return new ObjectMapper()
                 .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
@@ -247,6 +272,11 @@ public class MigrationAiService {
                 .configure(JsonReadFeature.ALLOW_TRAILING_COMMA.mappedFeature(), true);
     }
 
+    /**
+     * Résout le modèle à utiliser en fonction du modèle demandé et de la configuration par défaut du projet.
+     * @param requestedModel Le modèle demandé par l'utilisateur.
+     * @return Le modèle à utiliser, soit le modèle demandé, soit le modèle par défaut du projet, ou null si aucun modèle n'est disponible.
+     */
     private String resolveModel(String requestedModel) {
         if (requestedModel != null && !requestedModel.isBlank()) {
             return requestedModel.trim();
@@ -258,6 +288,11 @@ public class MigrationAiService {
         return null;
     }
 
+    /**
+     * Extrait le contenu JSON d'une réponse brute, en supprimant les balises de code et les espaces superflus.
+     * @param rawResponse La réponse brute contenant potentiellement du JSON.
+     * @return Le contenu JSON extrait de la réponse brute, ou la chaîne originale si aucun JSON n'est trouvé.
+     */
     private String extractJsonPayload(String rawResponse) {
         if (rawResponse == null) {
             return "";

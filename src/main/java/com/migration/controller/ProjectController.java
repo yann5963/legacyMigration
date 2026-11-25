@@ -29,6 +29,11 @@ public class ProjectController {
     private final MigrationFileStatusRepository fileStatusRepository;
     private final ProjectConfigurationRepository projectConfigurationRepository;
 
+    /**
+     * Scanne le projet à partir du chemin racine fourni et met à jour la configuration du projet avec le modèle LLM par défaut.
+     * @param request La requête contenant le chemin racine du projet et le modèle LLM par défaut.
+     * @return Un map contenant le nombre de fichiers trouvés.
+     */
     @PostMapping("/scan")
     public ResponseEntity<Map<String, Integer>> scanProject(@RequestBody ScanRequest request) {
         initializerStep.execute();
@@ -38,7 +43,8 @@ public class ProjectController {
             projectConfigurationRepository.save(config);
         });
 
-        int count = scannerService.scanProject(request.getSourceRootPath());
+        int count = scannerService.scanProject(request.getSourceRootPath(),
+                request.getManualEntryPoints(), request.isAutoDetectEntryPoints());
         return ResponseEntity.ok(Map.of("filesFound", count));
     }
 

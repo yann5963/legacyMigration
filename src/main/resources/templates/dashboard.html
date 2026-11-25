@@ -97,6 +97,10 @@
             </li>
         </ul>
 
+        <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" id="hideUnreachable" checked onchange="renderTable()">
+            <label class="form-check-label" for="hideUnreachable">Masquer le code non atteint</label>
+        </div>
         <div class="table-responsive">
             <table class="table table-bordered table-striped">
                 <thead class="table-dark">
@@ -498,6 +502,7 @@
             // 1. Pré-calcul des couches validées (O(N) au lieu de O(N²))
             const layerStatus = {};
             allMigrationData.forEach(f => {
+                if (f.reachable === false) return;
                 const l = f.layer || 1;
                 if (layerStatus[l] === undefined) layerStatus[l] = true;
                 if (f.status !== 'VALIDATED') layerStatus[l] = false;
@@ -507,9 +512,12 @@
             let data = currentFilterType !== 'ALL'
                 ? allMigrationData.filter(f => f.fileType === currentFilterType)
                 : [...allMigrationData];
+            if (document.getElementById('hideUnreachable').checked) {
+                data = data.filter(file => file.reachable !== false);
+            }
 
             if (data.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-4">Aucun fichier trouvé pour ce filtre.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-4">Aucun fichier trouvé pour ce filtre.</td></tr>`;
                 return;
             }
 
@@ -518,6 +526,12 @@
             // 3. Construction du HTML en mémoire
             const rowsHtml = data.map(file => {
                 fileDataMap.set(file.id, file);
+                const entryPointBadge = file.entryPoint
+                    ? '<br><span class="badge bg-primary">ENTRY POINT</span>' : '';
+                const unreachableBadge = file.reachable === false
+                    ? '<br><span class="badge bg-warning text-dark">NON ATTEINT (Code mort ?)</span>' : '';
+                const rootsHtml = file.rootEntryPoints
+                    ? `<div class="small text-muted text-truncate" title="${escapeHtml(file.rootEntryPoints)}">Flux : ${escapeHtml(file.rootEntryPoints)}</div>` : '';
 
                 // Formatage propre des fichiers sortants (artefacts multi-fichiers ou fallback targetFiles)
                 let targetFilesHtml = '<span class="text-muted fst-italic">Aucun</span>';
@@ -543,7 +557,7 @@
                 let warningClass = '';
                 let isBlocked = false;
                 const currentLayer = file.layer || 1;
-                if (currentLayer > 1 && ['SCANNED', 'ANALYZED', 'ANALYSIS_FAILED'].includes(file.status)) {
+                if (file.reachable !== false && currentLayer > 1 && ['SCANNED', 'ANALYZED', 'ANALYSIS_FAILED'].includes(file.status)) {
                     for (let l = 1; l < currentLayer; l++) {
                         if (layerStatus[l] === false) {
                             isBlocked = true;
@@ -612,7 +626,10 @@
                     <br><button class="btn btn-sm btn-outline-info mt-1" onclick="viewOriginalSource(${file.id})">Source</button>
                 </td>
                 <td class="text-nowrap"><strong>Couche ${currentLayer}</strong></td>
-                <td class="text-truncate" style="max-width: 220px;" title="${file.absolutePath}">${file.sourceFile}</td>
+                <td style="max-width: 220px;">
+                    <div class="text-truncate" title="${escapeHtml(file.absolutePath)}">${escapeHtml(file.sourceFile)}</div>
+                    ${entryPointBadge}${unreachableBadge}${rootsHtml}
+                </td>
                 <td>${preAnalysisHtml}</td>
                 <td>${targetFilesHtml}</td>
                 <td>
@@ -627,6 +644,12 @@
             // 4. Injection unique dans le DOM
             tbody.innerHTML = rowsHtml.join('');
         }
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, char => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            })[char]);
+        }
+
         function convertFile(id) {
             fetch(`/api/migration/files/${id}/convert`, { method: 'POST' })
                 .then(response => {

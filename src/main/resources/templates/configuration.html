@@ -64,6 +64,15 @@
         <div class="card-header">Initialisation & Scan des sources</div>
         <div class="card-body">
             <form id="scanForm">
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" id="autoDetectEntryPoints" checked>
+                    <label class="form-check-label" for="autoDetectEntryPoints">Auto-détecter les points d'entrée (web.xml, struts-config, Servlets, main)</label>
+                </div>
+                <div class="mb-3">
+                    <label for="manualEntryPoints" class="form-label">Points d'entrée manuels (chemins relatifs, un par ligne)</label>
+                    <textarea class="form-control" id="manualEntryPoints" rows="3" placeholder="src/main/webapp/WEB-INF/web.xml"></textarea>
+                    <div class="form-text">Optionnel. Les virgules sont aussi acceptées. Sans point d'entrée, tous les fichiers restent atteignables.</div>
+                </div>
                 <div class="mb-3">
                     <label for="sourceRootPath" class="form-label">Chemin absolu du projet source (Legacy)</label>
                     <input type="text" class="form-control" id="sourceRootPath" placeholder="/chemin/vers/projet-legacy" required>
@@ -201,7 +210,13 @@
         fetch('/api/project/scan', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sourceRootPath: path, defaultLlmModel: model })
+            body: JSON.stringify({
+                sourceRootPath: path,
+                defaultLlmModel: model,
+                autoDetectEntryPoints: document.getElementById('autoDetectEntryPoints').checked,
+                manualEntryPoints: document.getElementById('manualEntryPoints').value
+                    .split(/[,\r\n]+/).map(value => value.trim()).filter(Boolean)
+            })
         })
         .then(response => {
             if (!response.ok) throw new Error("Erreur serveur");

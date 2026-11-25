@@ -50,12 +50,36 @@ public class DynamicPromptBuilderService {
         StringBuilder sb = new StringBuilder();
         sb.append("### Contexte de migration du fichier : ").append(safe(fileStatus.getSourceFile())).append("\n");
         appendMetadataSection(sb, fileStatus, basePackage);
+        appendEntryPointContext(sb, fileStatus);
         appendRoleDirectives(sb, role, targetArtifact, fileStatus.getTargetSpringArtifact(), basePackage);
         appendRiskGuardrails(sb, fileStatus.getDetectedRisks());
         appendDependencyContext(sb, fileStatus, extraContextPaths);
         appendMultiFileSplittingRules(sb, basePackagePath);
 
         return sb.toString().trim();
+    }
+
+    private void appendEntryPointContext(StringBuilder sb, MigrationFileStatus fileStatus) {
+        if (fileStatus.isEntryPoint()) {
+            sb.append("- **ENTRY POINT** : ce fichier est un point d'entrée de l'application.\n");
+        }
+        if (!isNotBlank(fileStatus.getRootEntryPoints())) {
+            return;
+        }
+        String roots = fileStatus.getRootEntryPoints().trim();
+        String types = normalize(fileStatus.getRootEntryPointTypes());
+        String rootNames = normalize(roots);
+        sb.append("### Flux métiers racines\n").append(roots).append("\n");
+        List<String> rootFiles = List.of(rootNames.replace('\\', '/').split(",\\s*"));
+        if (types.contains("BATCH") || rootFiles.stream()
+                .anyMatch(root -> root.equals("MAIN.JAVA") || root.endsWith("/MAIN.JAVA"))) {
+            sb.append("- Flux batch (main) : privilégie Spring Batch / `CommandLineRunner` pour les points d'entrée batch.\n");
+        }
+        if (types.contains("WEB") || rootNames.contains("WEB.XML") || rootNames.contains("STRUTS-CONFIG.XML")
+                || rootFiles.stream().anyMatch(root -> root.matches(".*(?:SERVLET|ACTION)\\.JAVA"))) {
+            sb.append("- Flux Web/Struts : privilégie Spring Web MVC / REST pour le routage des points d'entrée Web.\n");
+        }
+        sb.append("- Préserve le rôle propre de ce composant ; les services et repositories partagés restent réutilisables par tous ces flux.\n\n");
     }
 
     private void appendMetadataSection(StringBuilder sb, MigrationFileStatus fileStatus, String basePackage) {

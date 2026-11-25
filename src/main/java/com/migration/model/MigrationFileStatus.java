@@ -39,6 +39,20 @@ public class MigrationFileStatus {
     private String absolutePath;
     private String fileType;
 
+    @Column(nullable = false, columnDefinition = "boolean default false")
+    private boolean entryPoint;
+
+    @Builder.Default
+    @Column(nullable = false, columnDefinition = "boolean default true")
+    private boolean reachable = true;
+
+    @Column(columnDefinition = "TEXT")
+    private String rootEntryPoints;
+
+    // Propagated types preserve batch/web intent even for roots with arbitrary class names.
+    @Column(columnDefinition = "TEXT")
+    private String rootEntryPointTypes;
+
     private boolean isConverted;
     private boolean isValidated;
 

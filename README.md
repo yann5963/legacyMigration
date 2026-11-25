@@ -28,6 +28,18 @@ L'objectif est d'offrir au développeur un contrôle total sur le processus de r
 
 ## 3. Stack Technique
 
+### Points d'entrée et accessibilité
+
+La page **Configuration** permet d'activer la détection automatique (par défaut) et de saisir des chemins relatifs manuels, un par ligne ou séparés par des virgules. Le scan détecte les descripteurs `web.xml`, `struts-config.xml`, `faces-config.xml`, `applicationContext.xml`, les méthodes `public static void main(String[] args)` et les classes dérivant de `HttpServlet`, `Action` ou `DispatchAction`.
+
+L'accessibilité suit les dépendances sortantes Java et les références XML vers Java. Chaque fichier atteint conserve tous ses points d'entrée racines, y compris dans les graphes cycliques. Sans point d'entrée, tous les fichiers restent atteignables pour préserver le comportement historique.
+
+Les fichiers non atteints sont des **candidats** au code mort, pas une preuve de code inutilisé (réflexion, routage dynamique et autres liens implicites ne sont pas exhaustivement résolus). La pré-analyse les classe `DEAD_CODE_CANDIDATE` / `ToDelete` sans appel au LLM ; aucune suppression n'est effectuée. Les autres fichiers sont analysés en commençant par les points d'entrée puis par couche décroissante. Les prompts reçoivent les flux racines et distinguent les orientations batch et Web.
+
+Le dashboard affiche les badges **ENTRY POINT**, **NON ATTEINT (Code mort ?)** et les flux racines. Le filtre **Masquer le code non atteint**, activé par défaut, peut être décoché pour examiner ces candidats. Les fichiers non atteints ne bloquent pas les couches atteignables.
+
+L'API `POST /api/project/scan` conserve ses champs existants et accepte aussi `manualEntryPoints` (tableau de chemins) et `autoDetectEntryPoints` (booléen, `true` si omis). La signature Java historique `scanProject(String)` reste disponible.
+
 ### Backend & Logique Métier
 *   **Langage :** Java 19
 *   **Framework Core :** Spring Boot 3.x

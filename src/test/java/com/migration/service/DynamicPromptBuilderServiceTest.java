@@ -42,6 +42,34 @@ class DynamicPromptBuilderServiceTest {
     }
 
     @Test
+    void rootFlowsGuideBatchAndWebWithoutChangingSharedComponentRole() {
+        MigrationFileStatus status = MigrationFileStatus.builder()
+                .sourceFile("Shared.java").architecturalRole("BUSINESS_SERVICE")
+                .rootEntryPoints("Bootstrap.java, web.xml")
+                .rootEntryPointTypes("BATCH, WEB").build();
+
+        String prompt = service.buildConversionPrompt(status, List.of());
+
+        assertTrue(prompt.contains("Bootstrap.java, web.xml"));
+        assertTrue(prompt.contains("Spring Batch"));
+        assertTrue(prompt.contains("CommandLineRunner"));
+        assertTrue(prompt.contains("Spring Web MVC / REST"));
+        assertTrue(prompt.contains("@Service"));
+    }
+
+    @Test
+    void entryPointIsIdentifiedAndDescriptorNamesSupportExistingMetadata() {
+        MigrationFileStatus status = MigrationFileStatus.builder()
+                .sourceFile("struts-config.xml").entryPoint(true)
+                .rootEntryPoints("struts-config.xml").build();
+
+        String prompt = service.buildConversionPrompt(status, List.of());
+
+        assertTrue(prompt.contains("ENTRY POINT"));
+        assertTrue(prompt.contains("Spring Web MVC / REST"));
+    }
+
+    @Test
     void buildConversionPrompt_forJdbcDao_includesSqlExtractionAndRecordDtoDirectives() {
         MigrationFileStatus status = MigrationFileStatus.builder()
                 .sourceFile("AnneeScolDao.java")

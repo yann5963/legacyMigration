@@ -22,6 +22,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
+import java.util.Comparator;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -82,7 +83,11 @@ public class SemanticPreAnalysisService {
 
         try {
             List<MigrationFileStatus> filesToAnalyze = repository.findByStatusIn(
-                    List.of(MigrationStatus.SCANNED, MigrationStatus.ANALYSIS_FAILED));
+                    List.of(MigrationStatus.SCANNED, MigrationStatus.ANALYSIS_FAILED)).stream()
+                    .sorted(Comparator.comparing(MigrationFileStatus::isEntryPoint).reversed()
+                            .thenComparing(MigrationFileStatus::getLayer,
+                                    Comparator.nullsLast(Comparator.reverseOrder())))
+                    .toList();
 
             totalCount.set(filesToAnalyze.size());
             processedCount.set(0);
@@ -155,6 +160,17 @@ public class SemanticPreAnalysisService {
      */
     boolean analyzeSingleFileInternal(MigrationFileStatus fileStatus, String llmModel) {
         try {
+            if (!fileStatus.isReachable()) {
+                fileStatus.setArchitecturalRole("DEAD_CODE_CANDIDATE");
+                fileStatus.setMigrationComplexity("TRIVIAL");
+                fileStatus.setTargetSpringArtifact("ToDelete");
+                fileStatus.setFunctionalSummary(
+                        "Fichier non atteint depuis les points d'entrée identifiés (code mort potentiel).");
+                fileStatus.setStatus(MigrationStatus.ANALYZED);
+                fileStatus.setErrorMessage(null);
+                repository.save(fileStatus);
+                return true;
+            }
             fileStatus.setStatus(MigrationStatus.ANALYZING);
             fileStatus.setErrorMessage(null);
             repository.save(fileStatus);
@@ -169,12 +185,10 @@ public class SemanticPreAnalysisService {
                 return true;
             }
 
-            FilePreAnalysisResult result = aiService.preAnalyzeFile(
-                    fileStatus.getSourceFile(),
-                    fileStatus.getFileType(),
-                    content,
-                    llmModel
-            );
+            String roots = fileStatus.getRootEntryPoints();
+            FilePreAnalysisResult result = roots == null || roots.isBlank()
+                    ? aiService.preAnalyzeFile(fileStatus.getSourceFile(), fileStatus.getFileType(), content, llmModel)
+                    : aiService.preAnalyzeFile(fileStatus.getSourceFile(), fileStatus.getFileType(), content, llmModel, roots);
 
             applyPreAnalysisResult(fileStatus, result);
             fileStatus.setStatus(MigrationStatus.ANALYZED);
