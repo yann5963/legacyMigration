@@ -8,6 +8,7 @@ import com.migration.config.MigrationPromptsProperties;
 import com.migration.repository.MigrationFileStatusRepository;
 import com.migration.repository.ProjectConfigurationRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -31,18 +32,33 @@ public class DynamicPromptBuilderService {
     private final MigrationFileStatusRepository fileStatusRepository;
     private final ProjectConfigurationRepository projectConfigRepository;
     private final MigrationPromptsProperties prompts;
+    private final TargetArtifactRegistryService artifactRegistry;
 
     public DynamicPromptBuilderService(MigrationFileStatusRepository fileStatusRepository,
                                        ProjectConfigurationRepository projectConfigRepository) {
-        this(fileStatusRepository, projectConfigRepository, new MigrationPromptsProperties());
+        this(fileStatusRepository, projectConfigRepository, new MigrationPromptsProperties(), null);
     }
 
     public DynamicPromptBuilderService(MigrationFileStatusRepository fileStatusRepository,
                                        ProjectConfigurationRepository projectConfigRepository,
                                        MigrationPromptsProperties prompts) {
+        this(fileStatusRepository, projectConfigRepository, prompts, null);
+    }
+
+    @Autowired
+    public DynamicPromptBuilderService(MigrationFileStatusRepository fileStatusRepository,
+                                       ProjectConfigurationRepository projectConfigRepository,
+                                       MigrationPromptsProperties prompts,
+                                       TargetArtifactRegistryService artifactRegistry) {
         this.fileStatusRepository = fileStatusRepository;
         this.projectConfigRepository = projectConfigRepository;
         this.prompts = prompts == null ? new MigrationPromptsProperties() : prompts;
+        this.artifactRegistry = artifactRegistry;
+    }
+
+    /** Prompt de conversion accompagné des artefacts cibles existants injectés dans son contexte. */
+    public record ConversionPrompt(String prompt,
+                                   List<TargetArtifactRegistryService.ExistingArtifactMatch> existingArtifacts) {
     }
 
     /**
@@ -53,6 +69,11 @@ public class DynamicPromptBuilderService {
      * @return Prompt structuré prêt à être affiché, édité et exécuté par le LLM.
      */
     public String buildConversionPrompt(MigrationFileStatus fileStatus, List<String> extraContextPaths) {
+        return buildConversionPromptWithArtifacts(fileStatus, extraContextPaths).prompt();
+    }
+
+    public ConversionPrompt buildConversionPromptWithArtifacts(MigrationFileStatus fileStatus,
+                                                               List<String> extraContextPaths) {
         if (fileStatus == null) {
             throw new IllegalArgumentException("fileStatus ne doit pas être null");
         }
@@ -69,9 +90,36 @@ public class DynamicPromptBuilderService {
         appendRoleDirectives(sb, role, targetArtifact, fileStatus.getTargetSpringArtifact(), basePackage);
         appendRiskGuardrails(sb, fileStatus.getDetectedRisks());
         appendDependencyContext(sb, fileStatus, extraContextPaths);
+        List<TargetArtifactRegistryService.ExistingArtifactMatch> existing =
+                appendExistingArtifacts(sb, fileStatus, extraContextPaths);
         appendMultiFileSplittingRules(sb, basePackagePath);
 
-        return sb.toString().trim();
+        return new ConversionPrompt(sb.toString().trim(), existing);
+    }
+
+    private List<TargetArtifactRegistryService.ExistingArtifactMatch> appendExistingArtifacts(
+            StringBuilder sb, MigrationFileStatus fileStatus, List<String> extraContextPaths) {
+        if (artifactRegistry == null) {
+            return List.of();
+        }
+        MigrationPromptsProperties.Registry registry = prompts.getConversion().getRegistry();
+        List<TargetArtifactRegistryService.ExistingArtifactMatch> matches;
+        try {
+            matches = artifactRegistry.findRelevantExistingArtifacts(fileStatus, extraContextPaths,
+                    registry.getTopK(), registry.getMaxContextChars());
+        } catch (Exception ex) {
+            return List.of();
+        }
+        if (matches.isEmpty()) {
+            return List.of();
+        }
+        String rendered = matches.stream()
+                .map(TargetArtifactRegistryService.ExistingArtifactMatch::render)
+                .collect(Collectors.joining());
+        sb.append(prompts.render(prompts.getExistingArtifactsTemplate(), Map.of(
+                "count", matches.size(),
+                "artifacts", rendered))).append("\n");
+        return matches;
     }
 
     private void appendEntryPointContext(StringBuilder sb, MigrationFileStatus fileStatus) {

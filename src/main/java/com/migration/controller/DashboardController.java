@@ -70,13 +70,30 @@ public class DashboardController {
      * Génère un aperçu du prompt de conversion dynamique avant exécution.
      */
     @PostMapping("/{id}/prompt-preview")
-    public ResponseEntity<Map<String, String>> previewConversionPrompt(
+    public ResponseEntity<Map<String, Object>> previewConversionPrompt(
             @PathVariable Long id,
             @RequestBody(required = false) List<String> extraContextPaths) {
         return repository.findById(id)
-                .map(status -> ResponseEntity.ok(Map.of(
-                        "prompt", dynamicPromptBuilderService.buildConversionPrompt(status, extraContextPaths))))
+                .map(status -> ResponseEntity.ok(toPreview(status, extraContextPaths)))
                 .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Prévisualise le prompt dynamique et les artefacts cibles existants détectés (fqcn, type, raison).
+     */
+    @GetMapping("/{id}/dynamic-prompt")
+    public ResponseEntity<Map<String, Object>> getDynamicPrompt(
+            @PathVariable Long id,
+            @RequestParam(required = false) List<String> extraContextPaths) {
+        return repository.findById(id)
+                .map(status -> ResponseEntity.ok(toPreview(status, extraContextPaths)))
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    private Map<String, Object> toPreview(MigrationFileStatus status, List<String> extraContextPaths) {
+        DynamicPromptBuilderService.ConversionPrompt result =
+                dynamicPromptBuilderService.buildConversionPromptWithArtifacts(status, extraContextPaths);
+        return Map.of("prompt", result.prompt(), "existingArtifacts", result.existingArtifacts());
     }
 
     /**

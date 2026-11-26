@@ -70,6 +70,13 @@ migration:
       - Tu **DOIS** produire autant de fichiers distincts que l'architecture Spring Boot 3 l'exige (séparation stricte `Controller` / `Service` / `Repository` / `DTO` / `Entity` / `Config`), chacun dans son package cible cohérent.
       - Exemple de chemins cibles (`relativeTargetPath`) : `src/main/java/{basePackagePath}/service/...`, `src/main/java/{basePackagePath}/dto/...`, `src/main/java/{basePackagePath}/repository/...`, `src/main/java/{basePackagePath}/controller/...`.
       - Pour chaque fichier généré, renseigne `relativeTargetPath`, `artifactType` (`CONTROLLER`, `SERVICE`, `REPOSITORY`, `DTO`, `ENTITY`, `CONFIG`, `VIEW`, `TEST`) et `code` complet et compilable.
+    existing-artifacts-template: |
+      ### Artefacts cibles déjà existants ({count}) — signatures compactes
+      {artifacts}
+      Règles strictes vis-à-vis de ces artefacts :
+      - **Réutiliser** : importe et utilise directement les classes existantes listées ci-dessus ; ne crée jamais d'alias, de copie ou de classe équivalente.
+      - **Étendre (upsert)** : si une `ENTITY` ou un `DTO` existant couvre déjà l'objet métier mais qu'il lui manque un attribut nécessaire à ce fichier, retourne le fichier complet mis à jour avec exactement le **même `relativeTargetPath` et le même nom de classe**, sans supprimer aucun champ existant.
+      - **Créer uniquement si absent** : ne crée une nouvelle `ENTITY` / `DTO` que si aucun artefact existant ne correspond.
     pre-analysis:
       system: |
         Tu es un architecte logiciel senior spécialisé dans la migration d'applications legacy J2EE / Struts / JDBC / JSP vers Spring Boot 3.
@@ -112,6 +119,10 @@ migration:
         Analyse à convertir :
         {rawResponse}
     conversion:
+      registry:
+        top-k: 5
+        similarity-threshold: 0.72
+        max-context-chars: 2500
       response-format: |
         Réponds EXCLUSIVEMENT par un objet JSON valide (aucun texte, aucun markdown autour, aucun commentaire // ou /* */ en dehors des chaînes JSON, retours à la ligne et guillemets échappés dans `code`) respectant ce schéma :
         {format}

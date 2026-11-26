@@ -30,6 +30,7 @@ public class MigrationPromptsProperties {
     private String riskDirectives = "";
     private String splittingHeader = "";
     private String splittingRules = "";
+    private String existingArtifactsTemplate = "";
     private Map<String, String> roleDirectives = new LinkedHashMap<>();
     private Map<String, String> pipelineDirectives = new LinkedHashMap<>();
 
@@ -109,6 +110,8 @@ public class MigrationPromptsProperties {
     public void setSplittingHeader(String splittingHeader) { this.splittingHeader = splittingHeader; }
     public String getSplittingRules() { return splittingRules; }
     public void setSplittingRules(String splittingRules) { this.splittingRules = splittingRules; }
+    public String getExistingArtifactsTemplate() { return existingArtifactsTemplate; }
+    public void setExistingArtifactsTemplate(String existingArtifactsTemplate) { this.existingArtifactsTemplate = existingArtifactsTemplate; }
     public Map<String, String> getRoleDirectives() { return roleDirectives; }
     public void setRoleDirectives(Map<String, String> roleDirectives) { this.roleDirectives = roleDirectives; }
     public Map<String, String> getPipelineDirectives() { return pipelineDirectives; }
@@ -136,6 +139,9 @@ public class MigrationPromptsProperties {
         private String skeleton = "";
         private String method = "";
         private String test = "";
+        private Registry registry = new Registry();
+        public Registry getRegistry() { return registry; }
+        public void setRegistry(Registry registry) { this.registry = registry; }
         public String getResponseFormat() { return responseFormat; }
         public void setResponseFormat(String responseFormat) { this.responseFormat = responseFormat; }
         public String getUser() { return user; }
@@ -148,5 +154,17 @@ public class MigrationPromptsProperties {
         public void setMethod(String method) { this.method = method; }
         public String getTest() { return test; }
         public void setTest(String test) { this.test = test; }
+    }
+
+    public static class Registry {
+        private int topK = 5;
+        private double similarityThreshold = 0.72;
+        private int maxContextChars = 2500;
+        public int getTopK() { return topK; }
+        public void setTopK(int topK) { this.topK = topK; }
+        public double getSimilarityThreshold() { return similarityThreshold; }
+        public void setSimilarityThreshold(double similarityThreshold) { this.similarityThreshold = similarityThreshold; }
+        public int getMaxContextChars() { return maxContextChars; }
+        public void setMaxContextChars(int maxContextChars) { this.maxContextChars = maxContextChars; }
     }
 }

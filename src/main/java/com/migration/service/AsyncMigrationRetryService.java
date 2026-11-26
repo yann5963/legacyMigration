@@ -45,6 +45,7 @@ public class AsyncMigrationRetryService {
     private final LegacyCodeParserService parserService;
     private final DynamicPromptBuilderService dynamicPromptBuilderService;
     private final MigrationPromptsProperties prompts;
+    private final TargetArtifactRegistryService artifactRegistry;
 
     @Value("${migration.target.output-dir}")
     private String outputDir;
@@ -292,7 +293,7 @@ public class AsyncMigrationRetryService {
         status.setStatus(MigrationStatus.NEEDS_REVIEW);
         status.setConverted(true);
         status.setTargetFiles(generatedFiles);
-        repository.save(status);
+        registerInRegistry(repository.save(status), status);
     }
 
     private void saveFilesAndComplete(MigrationFileStatus status, String response) throws Exception {
@@ -349,6 +350,17 @@ public class AsyncMigrationRetryService {
         status.setStatus(MigrationStatus.NEEDS_REVIEW);
         status.setConverted(true);
         status.setTargetFiles(generatedFiles);
-        repository.save(status);
+        registerInRegistry(repository.save(status), status);
+    }
+
+    private void registerInRegistry(MigrationFileStatus saved, MigrationFileStatus fallback) {
+        if (artifactRegistry == null) {
+            return;
+        }
+        try {
+            artifactRegistry.registerOrUpdateArtifacts(saved != null ? saved : fallback);
+        } catch (Exception ex) {
+            log.warn("Mise à jour du registre d'artefacts cibles impossible pour {}", fallback.getSourceFile(), ex);
+        }
     }
 }

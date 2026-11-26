@@ -139,6 +139,7 @@
                                 <button type="button" class="btn btn-sm btn-outline-secondary" onclick="loadDynamicPrompt('convert')">Régénérer le prompt</button>
                             </div>
                             <textarea class="form-control font-monospace" id="convertCustomPrompt" rows="8" style="font-size: 0.85rem;"></textarea>
+                            <div id="convertExistingArtifacts" class="alert alert-info py-1 px-2 mt-2 mb-0 small d-none"></div>
                         </div>
                         <hr>
                         <h6>Fichiers de contexte</h6>
@@ -188,6 +189,7 @@
                                 <button type="button" class="btn btn-sm btn-outline-secondary" onclick="loadDynamicPrompt('retry')">Régénérer le prompt dynamique</button>
                             </div>
                             <textarea class="form-control font-monospace" id="customPrompt" rows="8" style="font-size: 0.85rem;"></textarea>
+                            <div id="retryExistingArtifacts" class="alert alert-info py-1 px-2 mt-2 mb-0 small d-none"></div>
                         </div>
                         <hr>
                         <h6>Fichiers de contexte</h6>
@@ -733,6 +735,7 @@
                 .then(data => {
                     promptArea.value = data.prompt || '';
                     promptArea.dataset.userEdited = 'false';
+                    renderExistingArtifacts(type, data.existingArtifacts);
                 })
                 .catch(err => {
                     console.error('Erreur chargement prompt dynamique:', err);
@@ -740,6 +743,19 @@
                         promptArea.value = '';
                     }
                 });
+        }
+
+        function renderExistingArtifacts(type, artifacts) {
+            const box = document.getElementById(type === 'convert' ? 'convertExistingArtifacts' : 'retryExistingArtifacts');
+            if (!artifacts || artifacts.length === 0) {
+                box.classList.add('d-none');
+                box.textContent = '';
+                return;
+            }
+            const names = artifacts.map(a => a.fqcn.split('.').pop());
+            box.textContent = 'Artefacts réutilisables détectés (' + artifacts.length + ') : ' + names.join(', ');
+            box.title = artifacts.map(a => a.fqcn + ' [' + a.artifactType + '] - ' + a.matchReason).join('\n');
+            box.classList.remove('d-none');
         }
 
         function populateDatalist() {
