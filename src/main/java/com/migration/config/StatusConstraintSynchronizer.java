@@ -1,6 +1,7 @@
 package com.migration.config;
 
 import com.migration.model.MigrationStatus;
+import com.migration.model.ParityStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
@@ -48,6 +49,16 @@ public class StatusConstraintSynchronizer implements ApplicationRunner {
                             + allowedValues + "))");
             jdbcTemplate.execute(
                     "ALTER TABLE migration_file_status ALTER COLUMN last_custom_prompt TYPE varchar(20000)");
+
+            String allowedParityValues = Arrays.stream(ParityStatus.values())
+                    .map(Enum::name)
+                    .map(v -> "'" + v + "'")
+                    .collect(Collectors.joining(", "));
+            jdbcTemplate.execute(
+                    "ALTER TABLE migration_file_status DROP CONSTRAINT IF EXISTS migration_file_status_parity_status_check");
+            jdbcTemplate.execute(
+                    "ALTER TABLE migration_file_status ADD CONSTRAINT migration_file_status_parity_status_check CHECK (parity_status IS NULL OR parity_status IN ("
+                            + allowedParityValues + "))");
 
             log.info("Contrainte PostgreSQL migration_file_status_status_check synchronisée avec {} statuts.",
                     MigrationStatus.values().length);

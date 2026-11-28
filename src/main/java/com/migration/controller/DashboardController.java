@@ -1,13 +1,16 @@
 package com.migration.controller;
 
 import com.migration.dto.RetryRequest;
+import com.migration.dto.ReverseCheckReport;
 import com.migration.model.GeneratedArtifact;
 import com.migration.model.MigrationFileStatus;
 import com.migration.model.MigrationStatus;
+import com.migration.model.ParityStatus;
 import com.migration.repository.MigrationFileStatusRepository;
 import com.migration.service.AsyncMigrationRetryService;
 import com.migration.service.DynamicPromptBuilderService;
 import com.migration.service.DynamicRoutingService;
+import com.migration.service.ReverseCheckingService;
 import com.migration.service.SemanticPreAnalysisService;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.document.Document;
@@ -27,6 +30,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 
 /**
  * 
@@ -42,6 +46,7 @@ public class DashboardController {
     private final SemanticPreAnalysisService preAnalysisService;
     private final DynamicPromptBuilderService dynamicPromptBuilderService;
     private final DynamicRoutingService dynamicRoutingService;
+    private final ReverseCheckingService reverseCheckingService;
     private final VectorStore vectorStore;
 
     /**
@@ -209,6 +214,9 @@ public class DashboardController {
 
             status.setStatus(MigrationStatus.VALIDATED);
             status.setValidated(true);
+            if (status.getParityStatus() != null && status.getParityStatus() != ParityStatus.NON_VERIFIE) {
+                status.setParityStale(true);
+            }
             if (status.getGeneratedArtifacts() != null) {
                 status.getGeneratedArtifacts().forEach(a -> a.setValidated(true));
             }
@@ -247,5 +255,48 @@ public class DashboardController {
         String llmModel = (request != null) ? request.getLlmModel() : null;
         retryService.convertFile(id, customPrompt, contextFiles, llmModel);
         return ResponseEntity.accepted().build();
+    }
+
+    /**
+     * Récupère le dernier rapport de Reverse Checking sauvegardé en base sans appeler l'IA.
+     */
+    @GetMapping("/{id}/reverse-check")
+    public ResponseEntity<?> getReverseCheck(@PathVariable Long id) {
+        try {
+            return reverseCheckingService.getSavedReverseCheck(id)
+                    .<ResponseEntity<?>>map(saved -> {
+                        Map<String, Object> body = new java.util.LinkedHashMap<>();
+                        body.put("exists", true);
+                        body.put("report", saved.report());
+                        body.put("parityScore", saved.parityScore());
+                        body.put("parityStatus", saved.parityStatus());
+                        body.put("parityCheckedAt", saved.parityCheckedAt());
+                        body.put("parityStale", saved.parityStale());
+                        return ResponseEntity.ok(body);
+                    })
+                    .orElseGet(() -> ResponseEntity.ok(Map.of("exists", false)));
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    /**
+     * Exécute un audit de parité fonctionnelle (Reverse Checking) entre le fichier source legacy
+     * et l'ensemble des artefacts Spring Boot générés.
+     */
+    @PostMapping("/{id}/reverse-check")
+    public ResponseEntity<?> reverseCheck(@PathVariable Long id,
+            @RequestParam(required = false) String llmModel) {
+        try {
+            ReverseCheckReport report = reverseCheckingService.performReverseCheck(id, llmModel);
+            return ResponseEntity.ok(report);
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.notFound().build();
+        } catch (IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError()
+                    .body(Map.of("error", "Erreur lors de l'audit Reverse Checking : " + e.getMessage()));
+        }
     }
 }

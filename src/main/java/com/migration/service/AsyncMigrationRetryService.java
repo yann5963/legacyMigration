@@ -14,6 +14,7 @@ import com.migration.model.ContextMode;
 import com.migration.model.ContextReference;
 import com.migration.model.MigrationFileStatus;
 import com.migration.model.MigrationStatus;
+import com.migration.model.ParityStatus;
 import com.migration.parser.LegacyCodeParserService;
 import com.migration.parser.GeneratedArtifactValidator;
 import com.migration.repository.MigrationFileStatusRepository;
@@ -58,6 +59,9 @@ public class AsyncMigrationRetryService {
 
         status.setStatus(MigrationStatus.CONVERTING);
         status.setErrorMessage(null);
+        if (status.getParityStatus() != null && status.getParityStatus() != ParityStatus.NON_VERIFIE) {
+            status.setParityStale(true);
+        }
 
         if (contextFilesDto != null) {
             status.getContextFiles().clear();

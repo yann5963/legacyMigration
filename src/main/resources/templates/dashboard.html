@@ -314,6 +314,70 @@
         </div>
     </div>
 
+    <!-- Modal for Reverse Checking Report -->
+    <div class="modal fade" id="reverseCheckModal" tabindex="-1" aria-labelledby="reverseCheckModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="reverseCheckModalLabel">Reverse Checking : <span id="rcFileName"></span></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="rcLoading" class="text-center py-4 d-none">
+                        <div class="spinner-border text-primary mb-2" role="status">
+                            <span class="visually-hidden">Audit en cours...</span>
+                        </div>
+                        <div class="text-muted">Audit de parité fonctionnelle en cours via l'IA...</div>
+                    </div>
+                    <div id="rcError" class="alert alert-danger d-none"></div>
+                    <div id="rcContent" class="d-none">
+                        <div id="rcMetaBanner" class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2 d-none">
+                            <span id="rcExistingBadge" class="badge bg-secondary-subtle text-secondary-emphasis border">Rapport existant</span>
+                            <span id="rcStaleBadge" class="badge bg-warning text-dark d-none">⚠ Le code a été modifié depuis ce rapport — pensez à relancer l'analyse</span>
+                        </div>
+                        <div class="d-flex flex-wrap align-items-center gap-3 mb-3 p-3 bg-light rounded border">
+                            <div>
+                                <span class="text-muted small d-block">Score de parité</span>
+                                <span id="rcScoreBadge" class="badge fs-5"></span>
+                            </div>
+                            <div>
+                                <span class="text-muted small d-block">Statut global</span>
+                                <span id="rcGlobalStatusBadge" class="badge fs-6"></span>
+                            </div>
+                            <div class="flex-grow-1">
+                                <span class="text-muted small d-block">Synthèse</span>
+                                <span id="rcSummary" class="fw-medium"></span>
+                            </div>
+                        </div>
+
+                        <h6>Règles métier &amp; comportements vérifiés</h6>
+                        <div class="table-responsive mb-3">
+                            <table class="table table-sm table-bordered align-middle">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Règle métier</th>
+                                        <th class="text-nowrap">Statut</th>
+                                        <th>Emplacement cible</th>
+                                        <th>Détails / Écarts</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="rcRulesTableBody"></tbody>
+                            </table>
+                        </div>
+
+                        <h6>Vérifications SQL &amp; Mapping de données</h6>
+                        <ul id="rcSqlChecks" class="list-group list-group-flush border rounded mb-2"></ul>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+                    <button type="button" class="btn btn-primary" id="rcRerunBtn" onclick="rerunCurrentReverseCheck()">Relancer l'analyse</button>
+                    <button type="button" class="btn btn-warning d-none" id="rcFixWithAiBtn" onclick="fixDiscrepanciesWithAi()">Corriger les écarts avec l'IA</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Bootstrap Bundle JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
@@ -325,6 +389,10 @@
         let codeModal;
         let sourceModal;
         let preAnalysisModal;
+        let reverseCheckModal;
+        let currentRcFileId = null;
+        let currentRcFileName = '';
+        let currentReverseCheckReport = null;
         let fileDataMap = new Map();
         let allMigrationData = [];
         let currentFilterType = 'ALL';
@@ -337,6 +405,7 @@
             codeModal = new bootstrap.Modal(document.getElementById('codeModal'));
             sourceModal = new bootstrap.Modal(document.getElementById('sourceModal'));
             preAnalysisModal = new bootstrap.Modal(document.getElementById('preAnalysisModal'));
+            reverseCheckModal = new bootstrap.Modal(document.getElementById('reverseCheckModal'));
 
             fetch('/api/configuration/models')
                 .then(response => response.json())
@@ -631,7 +700,16 @@
                     <button class="btn btn-sm btn-info" onclick="viewCode(${file.id})">Code</button>
                     <button class="btn btn-sm btn-success" onclick="validateFile(${file.id})">Sauvegarder</button>
                     <button class="btn btn-sm btn-warning" onclick="openRetryModal(${file.id}, '${file.sourceFile}')">Ajuster IA</button>
+                    <button class="btn btn-sm btn-outline-primary" id="reverseCheckBtn-${file.id}" onclick="openOrRunReverseCheck(${file.id})">Reverse Checking</button>
                 </div>`;
+                }
+
+                let parityBadgeHtml = '';
+                if (file.parityStatus && file.parityStatus !== 'NON_VERIFIE') {
+                    const pClass = file.parityStatus === 'CONFORME' ? 'bg-success' : 'bg-danger';
+                    const pScore = file.parityScore != null ? `${file.parityScore}%` : '?';
+                    const staleTag = file.parityStale ? ' <span class="badge bg-warning text-dark ms-1" title="Le code a été modifié depuis ce rapport">Obsolète</span>' : '';
+                    parityBadgeHtml = `<br><button type="button" class="badge border-0 ${pClass} mt-1" onclick="openOrRunReverseCheck(${file.id})" title="Voir le dernier rapport d'audit">Parité : ${pScore} (${file.parityStatus})</button>${staleTag}`;
                 }
 
                 return `
@@ -649,6 +727,7 @@
                 <td>${targetFilesHtml}</td>
                 <td>
                     <span class="badge badge-${file.status}">${file.status}</span>
+                    ${parityBadgeHtml}
                     ${chunkProgressHtml}
                     ${errorMessageHtml}
                 </td>
@@ -677,19 +756,30 @@
         function validateFile(id) {
             fetch(`/api/migration/files/${id}/validate`, { method: 'POST' })
                 .then(response => {
-                    if (response.ok) fetchData();
+                    if (response.ok) {
+                        const file = fileDataMap.get(id);
+                        if (file && file.parityReport) {
+                            file.parityStale = true;
+                        }
+                        fetchData();
+                    }
                     else alert("Erreur lors de la sauvegarde.");
                 })
                 .catch(error => console.error('Error validating:', error));
         }
 
-        function openRetryModal(id, sourceFile) {
+        function openRetryModal(id, sourceFile, prefillPrompt = null) {
             document.getElementById('modalFileId').value = id;
             document.getElementById('modalFileName').textContent = sourceFile;
             const file = fileDataMap.get(id);
             const promptArea = document.getElementById('customPrompt');
-            promptArea.dataset.userEdited = 'false';
-            promptArea.value = (file && file.lastCustomPrompt) ? file.lastCustomPrompt : '';
+            if (prefillPrompt !== null) {
+                promptArea.value = prefillPrompt;
+                promptArea.dataset.userEdited = 'true';
+            } else {
+                promptArea.dataset.userEdited = 'false';
+                promptArea.value = (file && file.lastCustomPrompt) ? file.lastCustomPrompt : '';
+            }
             document.getElementById('retryLlmModel').value = ''; // Reset to default
 
             // Populate context files
@@ -703,12 +793,247 @@
 
             populateDatalist();
 
-            if (!promptArea.value.trim()) {
+            if (!promptArea.value.trim() && prefillPrompt === null) {
                 loadDynamicPrompt('retry');
             }
 
             loadRetryGeneratedCode(id);
             retryModal.show();
+        }
+
+        function openOrRunReverseCheck(id) {
+            const file = fileDataMap.get(id);
+            if (file && file.parityReport) {
+                try {
+                    const report = JSON.parse(file.parityReport);
+                    displaySavedReverseCheck(id, file.sourceFile, report, {
+                        isExisting: true,
+                        checkedAt: file.parityCheckedAt,
+                        isStale: !!file.parityStale
+                    });
+                    return;
+                } catch (e) {
+                    // Fallback to GET / POST
+                }
+            }
+
+            fetch(`/api/migration/files/${id}/reverse-check`)
+                .then(response => {
+                    if (!response.ok) throw new Error(`Erreur HTTP ${response.status}`);
+                    return response.json();
+                })
+                .then(data => {
+                    if (data && data.exists && data.report) {
+                        if (file) {
+                            file.parityReport = JSON.stringify(data.report);
+                            file.parityScore = data.parityScore;
+                            file.parityStatus = data.parityStatus;
+                            file.parityCheckedAt = data.parityCheckedAt;
+                            file.parityStale = !!data.parityStale;
+                        }
+                        displaySavedReverseCheck(id, file ? file.sourceFile : ('#' + id), data.report, {
+                            isExisting: true,
+                            checkedAt: data.parityCheckedAt,
+                            isStale: !!data.parityStale
+                        });
+                    } else {
+                        runReverseCheck(id);
+                    }
+                })
+                .catch(() => runReverseCheck(id));
+        }
+
+        function displaySavedReverseCheck(id, sourceFile, report, meta = {}) {
+            currentRcFileId = id;
+            currentRcFileName = sourceFile || ('#' + id);
+            currentReverseCheckReport = report;
+            document.getElementById('rcFileName').textContent = currentRcFileName;
+            document.getElementById('rcLoading').classList.add('d-none');
+            document.getElementById('rcError').classList.add('d-none');
+            document.getElementById('rcRerunBtn').disabled = false;
+            renderReverseCheckReport(report, meta);
+            reverseCheckModal.show();
+        }
+
+        function runReverseCheck(id) {
+            const file = fileDataMap.get(id);
+            currentRcFileId = id;
+            currentRcFileName = file ? file.sourceFile : ('#' + id);
+            currentReverseCheckReport = null;
+
+            const btn = document.getElementById(`reverseCheckBtn-${id}`);
+            const originalBtnHtml = btn ? btn.innerHTML : 'Reverse Checking';
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Audit...';
+            }
+
+            document.getElementById('rcFileName').textContent = currentRcFileName;
+            document.getElementById('rcLoading').classList.remove('d-none');
+            document.getElementById('rcError').classList.add('d-none');
+            document.getElementById('rcContent').classList.add('d-none');
+            document.getElementById('rcFixWithAiBtn').classList.add('d-none');
+            document.getElementById('rcRerunBtn').disabled = true;
+            reverseCheckModal.show();
+
+            fetch(`/api/migration/files/${id}/reverse-check`, { method: 'POST' })
+                .then(async response => {
+                    const data = await response.json().catch(() => ({}));
+                    if (!response.ok) {
+                        throw new Error(data.error || `Erreur HTTP ${response.status}`);
+                    }
+                    return data;
+                })
+                .then(report => {
+                    currentReverseCheckReport = report;
+                    if (file) {
+                        file.parityReport = JSON.stringify(report);
+                        file.parityScore = report.score;
+                        file.parityStatus = report.globalStatus;
+                        file.parityCheckedAt = new Date().toISOString();
+                        file.parityStale = false;
+                    }
+                    renderReverseCheckReport(report, { isExisting: false, checkedAt: file ? file.parityCheckedAt : new Date().toISOString(), isStale: false });
+                    fetchData();
+                })
+                .catch(error => {
+                    document.getElementById('rcLoading').classList.add('d-none');
+                    const errEl = document.getElementById('rcError');
+                    errEl.textContent = error.message || "Erreur lors de l'audit Reverse Checking.";
+                    errEl.classList.remove('d-none');
+                })
+                .finally(() => {
+                    document.getElementById('rcRerunBtn').disabled = false;
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.innerHTML = originalBtnHtml;
+                    }
+                });
+        }
+
+        function rerunCurrentReverseCheck() {
+            if (currentRcFileId != null) {
+                runReverseCheck(currentRcFileId);
+            }
+        }
+
+        function renderReverseCheckReport(report, meta = {}) {
+            document.getElementById('rcLoading').classList.add('d-none');
+            document.getElementById('rcContent').classList.remove('d-none');
+
+            const metaBanner = document.getElementById('rcMetaBanner');
+            const existingBadge = document.getElementById('rcExistingBadge');
+            const staleBadge = document.getElementById('rcStaleBadge');
+            const formattedDate = formatParityDate(meta.checkedAt);
+            if (meta.isExisting || formattedDate || meta.isStale) {
+                metaBanner.classList.remove('d-none');
+                if (meta.isExisting) {
+                    existingBadge.textContent = formattedDate ? `Rapport existant (${formattedDate})` : 'Rapport existant';
+                    existingBadge.classList.remove('d-none');
+                } else if (formattedDate) {
+                    existingBadge.textContent = `Analyse effectuée le ${formattedDate}`;
+                    existingBadge.classList.remove('d-none');
+                } else {
+                    existingBadge.classList.add('d-none');
+                }
+                if (meta.isStale) {
+                    staleBadge.classList.remove('d-none');
+                } else {
+                    staleBadge.classList.add('d-none');
+                }
+            } else {
+                metaBanner.classList.add('d-none');
+            }
+
+            const score = report.score ?? 0;
+            const scoreBadge = document.getElementById('rcScoreBadge');
+            scoreBadge.textContent = `${score} / 100`;
+            scoreBadge.className = 'badge fs-5 ' + (score >= 90 ? 'bg-success' : (score >= 60 ? 'bg-warning text-dark' : 'bg-danger'));
+
+            const statusBadge = document.getElementById('rcGlobalStatusBadge');
+            const isConforme = report.globalStatus === 'CONFORME';
+            statusBadge.textContent = report.globalStatus || 'ECARTS_DETECTES';
+            statusBadge.className = 'badge fs-6 ' + (isConforme ? 'bg-success' : 'bg-danger');
+
+            document.getElementById('rcSummary').textContent = report.summary || '';
+
+            const ruleStatusStyles = {
+                'IMPLEMENTE': { badge: 'bg-success', label: '✔ IMPLEMENTE' },
+                'PARTIEL': { badge: 'bg-warning text-dark', label: '⚠ PARTIEL' },
+                'MANQUANT': { badge: 'bg-danger', label: '✖ MANQUANT' },
+                'AJOUTE': { badge: 'bg-info text-dark', label: '+ AJOUTE' }
+            };
+
+            const tbody = document.getElementById('rcRulesTableBody');
+            const rules = Array.isArray(report.rules) ? report.rules : [];
+            if (rules.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="text-muted text-center">Aucune règle détaillée retournée.</td></tr>';
+            } else {
+                tbody.innerHTML = rules.map(rule => {
+                    const st = (rule.status || 'MANQUANT').toUpperCase();
+                    const style = ruleStatusStyles[st] || { badge: 'bg-secondary', label: st };
+                    return `
+                        <tr>
+                            <td>${escapeHtml(rule.ruleDescription || '')}</td>
+                            <td class="text-nowrap"><span class="badge ${style.badge}">${escapeHtml(style.label)}</span></td>
+                            <td><code>${escapeHtml(rule.targetLocation || '-')}</code></td>
+                            <td>${escapeHtml(rule.discrepancyDetails || '-')}</td>
+                        </tr>`;
+                }).join('');
+            }
+
+            const sqlList = document.getElementById('rcSqlChecks');
+            const sqlChecks = Array.isArray(report.sqlAndDataChecks) ? report.sqlAndDataChecks : [];
+            if (sqlChecks.length === 0) {
+                sqlList.innerHTML = '<li class="list-group-item text-success">✔ Aucun écart SQL ou de mapping de données détecté.</li>';
+            } else {
+                sqlList.innerHTML = sqlChecks.map(item =>
+                    `<li class="list-group-item list-group-item-warning">${escapeHtml(item)}</li>`
+                ).join('');
+            }
+
+            const hasGaps = rules.some(r => ['MANQUANT', 'PARTIEL'].includes((r.status || '').toUpperCase())) || sqlChecks.length > 0;
+            const fixBtn = document.getElementById('rcFixWithAiBtn');
+            if (hasGaps || !isConforme) {
+                fixBtn.classList.remove('d-none');
+            } else {
+                fixBtn.classList.add('d-none');
+            }
+        }
+
+        function formatParityDate(isoString) {
+            if (!isoString) return '';
+            const d = new Date(isoString);
+            if (Number.isNaN(d.getTime())) return '';
+            return d.toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
+        }
+
+        function fixDiscrepanciesWithAi() {
+            if (currentRcFileId == null || !currentReverseCheckReport) return;
+            const rules = Array.isArray(currentReverseCheckReport.rules) ? currentReverseCheckReport.rules : [];
+            const gaps = rules.filter(r => ['MANQUANT', 'PARTIEL'].includes((r.status || '').toUpperCase()));
+            const sqlChecks = Array.isArray(currentReverseCheckReport.sqlAndDataChecks) ? currentReverseCheckReport.sqlAndDataChecks : [];
+
+            const lines = [
+                "Corrige les écarts de parité fonctionnelle détectés lors de l'audit Reverse Checking :"
+            ];
+            if (gaps.length > 0) {
+                lines.push("", "Règles MANQUANTES ou PARTIELLES à implémenter intégralement :");
+                gaps.forEach((g, idx) => {
+                    lines.push(`${idx + 1}. [${g.status}] ${g.ruleDescription || ''}` +
+                        (g.targetLocation ? ` (Cible: ${g.targetLocation})` : '') +
+                        (g.discrepancyDetails ? ` — Écart: ${g.discrepancyDetails}` : ''));
+                });
+            }
+            if (sqlChecks.length > 0) {
+                lines.push("", "Écarts SQL / mapping de données à corriger :");
+                sqlChecks.forEach((s, idx) => lines.push(`${idx + 1}. ${s}`));
+            }
+            lines.push("", "Conserve tout le code déjà conforme et retourne l'ensemble des artefacts complets et compilables.");
+
+            const prefillPrompt = lines.join("\n");
+            reverseCheckModal.hide();
+            openRetryModal(currentRcFileId, currentRcFileName, prefillPrompt);
         }
 
         function loadRetryGeneratedCode(id) {
@@ -911,6 +1236,10 @@
             })
                 .then(response => {
                     if (response.ok) {
+                        const file = fileDataMap.get(Number(id));
+                        if (file && file.parityReport) {
+                            file.parityStale = true;
+                        }
                         retryModal.hide();
                         fetchData();
                     } else {

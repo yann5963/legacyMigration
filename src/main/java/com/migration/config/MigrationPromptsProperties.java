@@ -16,6 +16,10 @@ public class MigrationPromptsProperties {
     private PreAnalysis preAnalysis = new PreAnalysis();
     private Conversion conversion = new Conversion();
     private Finalization finalization = new Finalization();
+    private ReverseCheck reverseCheck = new ReverseCheck();
+
+    public ReverseCheck getReverseCheck() { return reverseCheck; }
+    public void setReverseCheck(ReverseCheck reverseCheck) { this.reverseCheck = reverseCheck; }
 
     public Finalization getFinalization() { return finalization; }
     public void setFinalization(Finalization finalization) { this.finalization = finalization; }
@@ -179,5 +183,35 @@ public class MigrationPromptsProperties {
         public void setSimilarityThreshold(double similarityThreshold) { this.similarityThreshold = similarityThreshold; }
         public int getMaxContextChars() { return maxContextChars; }
         public void setMaxContextChars(int maxContextChars) { this.maxContextChars = maxContextChars; }
+    }
+
+    public static class ReverseCheck {
+        private String system = """
+                Tu es un auditeur QA senior extrêmement strict spécialisé en migration Java / Spring Boot.
+                Compare le code source legacy original et l'ensemble des fichiers Spring Boot générés sans aucune complaisance.
+                Vérifie chaque règle métier, validation, gestion d'erreur, requête SQL (clauses WHERE, jointures, tris, mappings de champs) et comportement fonctionnel.
+                Réponds EXCLUSIVEMENT par un objet JSON valide respectant ce schéma :
+                {format}""";
+        private String user = """
+                Fichier source legacy : {sourceFileName}
+                ```
+                {sourceCode}
+                ```
+
+                Artefacts Spring Boot générés :
+                {targetArtifacts}""";
+        private String repair = """
+                Convertis l'audit suivant en UN SEUL objet JSON strictement valide (rien avant {, rien après }) avec les clés :
+                score (entier 0..100), globalStatus (CONFORME ou ECARTS_DETECTES), summary, rules ([{ruleDescription, status, targetLocation, discrepancyDetails}]), sqlAndDataChecks ([...]).
+
+                Réponse à convertir :
+                {rawResponse}""";
+
+        public String getSystem() { return system; }
+        public void setSystem(String system) { this.system = system; }
+        public String getUser() { return user; }
+        public void setUser(String user) { this.user = user; }
+        public String getRepair() { return repair; }
+        public void setRepair(String repair) { this.repair = repair; }
     }
 }

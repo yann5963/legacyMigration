@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migration.config.MigrationPromptsProperties;
 import com.migration.dto.FilePreAnalysisResult;
 import com.migration.dto.MultiFileConversionResponse;
+import com.migration.dto.ReverseCheckReport;
 import com.migration.model.ProjectConfiguration;
 import com.migration.repository.ProjectConfigurationRepository;
 import com.migration.parser.GeneratedArtifactValidator;
@@ -244,6 +245,74 @@ public class MigrationAiService {
             String repairedResponse = chatClient.call(repairPrompt).getResult().getOutput().getContent();
             return GeneratedArtifactValidator.validate(outputParser.parse(extractJsonPayload(repairedResponse)));
         }
+    }
+
+    /**
+     * Réalise un audit de parité fonctionnelle (Reverse Checking) entre le code source legacy
+     * et l'ensemble des artefacts Spring Boot générés, en sortie structurée JSON.
+     *
+     * @param sourceFileName          Nom du fichier source legacy.
+     * @param sourceCode              Contenu du fichier source legacy.
+     * @param formattedTargetArtifacts Ensemble formaté des artefacts Spring Boot générés.
+     * @param model                   Modèle Ollama optionnel.
+     * @return Rapport structuré {@link ReverseCheckReport}.
+     */
+    public ReverseCheckReport reverseCheck(String sourceFileName, String sourceCode,
+                                           String formattedTargetArtifacts, String model) {
+        log.debug("Appel au LLM pour Reverse Checking du fichier {}...", sourceFileName);
+
+        ObjectMapper lenientMapper = createLenientObjectMapper();
+        BeanOutputParser<ReverseCheckReport> outputParser =
+                new BeanOutputParser<>(ReverseCheckReport.class, lenientMapper);
+
+        SystemPromptTemplate systemTemplate = new SystemPromptTemplate(prompts.getReverseCheck().getSystem());
+        Message systemMessage = systemTemplate.createMessage(Map.of("format", outputParser.getFormat()));
+
+        String userContent = prompts.render(prompts.getReverseCheck().getUser(), Map.of(
+                "sourceFileName", sourceFileName != null ? sourceFileName : "unknown",
+                "sourceCode", sourceCode != null ? sourceCode : "",
+                "targetArtifacts", formattedTargetArtifacts != null ? formattedTargetArtifacts : ""));
+        UserMessage userMessage = new UserMessage(userContent);
+
+        String modelToUse = resolveModel(model);
+        OllamaOptions options = OllamaOptions.create()
+                .withTemperature(0.1f)
+                .withNumCtx(8192);
+        if (modelToUse != null && !modelToUse.isBlank()) {
+            options = options.withModel(modelToUse);
+        }
+
+        Prompt prompt = new Prompt(List.of(systemMessage, userMessage), options);
+        String rawResponse = chatClient.call(prompt).getResult().getOutput().getContent();
+
+        ReverseCheckReport report;
+        try {
+            report = outputParser.parse(extractJsonPayload(rawResponse));
+        } catch (Exception firstError) {
+            log.debug("Premier parsing JSON ReverseCheck échoué pour {}, tentative de réparation...", sourceFileName);
+            UserMessage repairMessage = new UserMessage(prompts.render(prompts.getReverseCheck().getRepair(),
+                    Map.of("rawResponse", rawResponse == null ? "" : rawResponse)));
+            Prompt repairPrompt = new Prompt(List.of(systemMessage, repairMessage), options);
+            String repairedResponse = chatClient.call(repairPrompt).getResult().getOutput().getContent();
+            report = outputParser.parse(extractJsonPayload(repairedResponse));
+        }
+        return normalizeReverseCheckReport(report);
+    }
+
+    private ReverseCheckReport normalizeReverseCheckReport(ReverseCheckReport report) {
+        if (report == null) {
+            return new ReverseCheckReport(0, "ECARTS_DETECTES", "Rapport vide retourné par l'IA.", List.of(), List.of());
+        }
+        int clampedScore = Math.max(0, Math.min(100, report.score()));
+        List<ReverseCheckReport.RuleCheckItem> rules = report.rules() != null ? report.rules() : List.of();
+        List<String> sqlChecks = report.sqlAndDataChecks() != null ? report.sqlAndDataChecks() : List.of();
+        boolean hasGaps = rules.stream().anyMatch(r -> r.status() != null &&
+                ("MANQUANT".equalsIgnoreCase(r.status()) || "PARTIEL".equalsIgnoreCase(r.status())));
+        String normalizedStatus = ("CONFORME".equalsIgnoreCase(report.globalStatus()) && !hasGaps && sqlChecks.isEmpty())
+                ? "CONFORME"
+                : "ECARTS_DETECTES";
+        String summary = report.summary() != null ? report.summary() : "";
+        return new ReverseCheckReport(clampedScore, normalizedStatus, summary, rules, sqlChecks);
     }
 
     /**

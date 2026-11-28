@@ -14,6 +14,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.ArrayList;
 import jakarta.persistence.OneToMany;
@@ -89,6 +90,22 @@ public class MigrationFileStatus {
 
     @Column(length = 150)
     private String suggestedFunctionalLot;
+
+    private Integer parityScore;
+
+    @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @Column(length = 30)
+    private ParityStatus parityStatus = ParityStatus.NON_VERIFIE;
+
+    @Column(columnDefinition = "TEXT")
+    private String parityReport;
+
+    private LocalDateTime parityCheckedAt;
+
+    @Builder.Default
+    @Column(nullable = false, columnDefinition = "boolean default false")
+    private boolean parityStale = false;
 
     @OneToMany(mappedBy = "migrationFileStatus", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @Builder.Default
