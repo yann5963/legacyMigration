@@ -6,6 +6,8 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import jakarta.persistence.Column;
+import java.time.LocalDateTime;
 
 /**
  * Représente la configuration d'un projet cible pour la migration.
@@ -30,4 +32,12 @@ public class ProjectConfiguration {
     private String targetBasePackage;
 
     private String defaultLlmModel;
+
+    private Boolean lastBuildSuccess;
+    private LocalDateTime lastBuildAt;
+    @Column(nullable = false, columnDefinition = "integer default 0")
+    private int lastBuildErrors;
+
+    @Column(columnDefinition = "TEXT")
+    private String lastBuildDiagnostic;
 }

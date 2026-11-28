@@ -28,6 +28,45 @@ L'objectif est d'offrir au développeur un contrôle total sur le processus de r
 
 ## 3. Stack Technique
 
+### Finalisation et compilation du projet cible
+
+Le bouton **Finaliser et Compiler** du dashboard ouvre `/finalization`. Configurez d'abord
+le chemin du projet cible ; il doit être distinct du répertoire de l'outil.
+
+1. **Préparer le terrain** écrit les artefacts en base dans le répertoire cible, aligne les
+   packages et retire les imports `javax.servlet` / `org.apache.struts` par JavaParser.
+   Le squelette manquant est créé (Spring Boot 3, Java 21, classe principale et configuration).
+   Les dépendances Maven manquantes sont déduites des artefacts, sans remplacer le POM existant.
+   Cette étape réécrit les fichiers générés : réconciliez préalablement toute modification manuelle sur disque.
+2. **Lancer le Build Maven** exécute `mvn test-compile -B` dans ce répertoire
+   (Maven et un JDK compatible avec le projet cible doivent être disponibles dans le PATH du serveur).
+   Un délai de dix minutes interrompt le processus Maven et ses descendants.
+3. **Corriger par saut de puce** effectue au plus le nombre de sauts demandé (1–50),
+   avec un diagnostic initial puis un build après chaque correction, en ordre
+   ENTITY/DTO → REPOSITORY → SERVICE → CONTROLLER et au maximum deux tentatives IA
+   cumulées par artefact en automatique. Les relances manuelles restent possibles.
+
+Les statuts, dates, erreurs par fichier, compteurs, derniers prompts et le résumé du
+dernier build sont persistés en base (`ddl-auto: update`). Le suivi de l'opération en
+cours est en mémoire et consulté par polling ; un redémarrage du serveur l'interrompt.
+Les artefacts verrouillés ne sont pas corrigés par l'IA.
+
+Le LLM ne reçoit que les erreurs du fichier, les imports/déclarations, les fenêtres
+de ±15 lignes et les signatures compactes des dépendances citées. Les prompts sont
+externalisés dans `migration.prompts.finalization` dans `prompts.yml`. Les réponses
+doivent être des patches JSON de remplacements exacts et uniques, pas des fichiers
+complets. Un contrôle AST refuse les suppressions de méthodes (y compris les
+surcharges et méthodes non publiques), de champs et les changements de types/packages.
+Ce garde-fou structurel ne prouve pas l'équivalence sémantique : une revue métier reste nécessaire.
+
+API (les actions longues retournent HTTP 202 ; une seconde action simultanée retourne 409) :
+`GET /api/migration/finalization`, `GET /api/migration/finalization/status`,
+`POST /api/migration/finalization/prepare`, `POST /api/migration/finalization/build`,
+`POST /api/migration/finalization/auto-fix?maxIterations=10`,
+`GET /api/migration/finalization/artifacts/{id}/fix-prompt`,
+`POST /api/migration/finalization/artifacts/{id}/fix` avec
+`{"customPrompt":"...","modelOverride":"..."}` (champs optionnels).
+
 ### Points d'entrée et accessibilité
 
 La page **Configuration** permet d'activer la détection automatique (par défaut) et de saisir des chemins relatifs manuels, un par ligne ou séparés par des virgules. Le scan détecte les descripteurs `web.xml`, `struts-config.xml`, `faces-config.xml`, `applicationContext.xml`, les méthodes `public static void main(String[] args)` et les classes dérivant de `HttpServlet`, `Action` ou `DispatchAction`.
@@ -49,6 +88,26 @@ L'API `POST /api/project/scan` conserve ses champs existants et accepte aussi `m
 ### Base de Données & Stockage
 *   **Relationnel :** PostgreSQL (Suivi d'état, historique de migration)
 *   **Vectoriel :** pgvector (Base de données vectorielle pour le système RAG)
+
+Le modèle d'embedding `nomic-embed-text:v1.5` produit **768 dimensions**. La propriété
+`spring.ai.vectorstore.pgvector.dimensions` et le type de la colonne
+`vector_store.embedding` doivent donc tous deux être à 768. Avec Spring AI 0.8.1,
+modifier cette propriété ne redimensionne pas une table existante : une ancienne
+table créée en `vector(1536)` reste incompatible.
+
+Au démarrage, le synchroniseur vérifie le type réel de la colonne. Si la table est
+vide, il ajuste la dimension dans une transaction avec verrouillage. Si elle contient
+des données incompatibles, il arrête le démarrage avec un diagnostic explicite,
+sans supprimer ni tronquer de vecteurs. Il faut alors sauvegarder les contenus et
+métadonnées puis recalculer les embeddings avec le modèle choisi ; réduire un vecteur
+1536 à ses 768 premières valeurs ne constitue pas une migration valide.
+Ne configurez pas `remove-existing-vector-store-table: true` pour contourner ce problème :
+cette option supprime les données.
+
+Le test `PgVectorDimensionIntegrationTest` s'active avec les variables
+`PGVECTOR_TEST_URL`, `PGVECTOR_TEST_USER` et `PGVECTOR_TEST_PASSWORD`.
+Il utilise un schéma PostgreSQL unique, supprimé après le test, pour vérifier la
+réparation, l'insertion et la recherche de similarité sans toucher aux données applicatives.
 
 ### Intelligence Artificielle
 *   **Modèles Supportés :** Ollama (Inférence locale performante) ou APIs Cloud LLM (OpenAI, Anthropic, etc.) configurables via Spring AI.

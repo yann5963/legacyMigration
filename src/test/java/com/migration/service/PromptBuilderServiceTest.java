@@ -1,14 +1,17 @@
 package com.migration.service;
 
+import com.migration.config.MigrationPromptsProperties;
 import com.migration.model.ContextMode;
 import com.migration.model.ContextReference;
 import com.migration.parser.LegacyCodeParserService;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -34,6 +37,32 @@ class PromptBuilderServiceTest {
     void setUp() throws IOException {
         tempFile = Files.createTempFile("test", ".java");
         Files.writeString(tempFile, "public class Test {}");
+    }
+
+    @AfterEach
+    void tearDown() throws IOException {
+        Files.deleteIfExists(tempFile);
+    }
+
+    @Test
+    void springCreatesServiceWithConfiguredContextHeader() {
+        MigrationPromptsProperties prompts = new MigrationPromptsProperties();
+        prompts.setContextHeader("Configured context header");
+        ContextReference ref = new ContextReference();
+        ref.setFilePath(tempFile.toString());
+        ref.setMode(ContextMode.FULL);
+
+        new ApplicationContextRunner()
+                .withBean(LegacyCodeParserService.class, () -> parserService)
+                .withBean(MigrationPromptsProperties.class, () -> prompts)
+                .withUserConfiguration(PromptBuilderService.class)
+                .run(context -> {
+                    assertThat(context).hasNotFailed().hasSingleBean(PromptBuilderService.class);
+                    assertThat(context.getBean(PromptBuilderService.class).resolveContextFiles(List.of(ref)))
+                            .startsWith("Configured context header\n\n")
+                            .contains("public class Test {}")
+                            .contains("Mode: FULL");
+                });
     }
 
     @Test

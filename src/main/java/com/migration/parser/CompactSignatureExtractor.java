@@ -59,7 +59,7 @@ public class CompactSignatureExtractor {
         }
         try {
             ParserConfiguration configuration = new ParserConfiguration()
-                    .setLanguageLevel(ParserConfiguration.LanguageLevel.JAVA_17);
+                    .setLanguageLevel(ParserConfiguration.LanguageLevel.JAVA_21);
             ParseResult<CompilationUnit> result = new JavaParser(configuration).parse(code);
             Optional<CompilationUnit> unit = result.getResult();
             if (result.isSuccessful() && unit.isPresent()) {

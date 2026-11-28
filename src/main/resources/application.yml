@@ -36,6 +36,7 @@ spring:
         index-type: HNSW
         distance-type: COSINE_DISTANCE
         dimensions: 768 # Cohérent avec nomic-embed-text (768 dimensions)
+        remove-existing-vector-store-table: false
 
 # Configuration spécifique à l'outil de migration
 migration:

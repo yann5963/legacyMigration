@@ -15,6 +15,7 @@ import com.migration.model.ContextReference;
 import com.migration.model.MigrationFileStatus;
 import com.migration.model.MigrationStatus;
 import com.migration.parser.LegacyCodeParserService;
+import com.migration.parser.GeneratedArtifactValidator;
 import com.migration.repository.MigrationFileStatusRepository;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.SearchRequest;
@@ -251,6 +252,7 @@ public class AsyncMigrationRetryService {
 
     private void saveMultiFileArtifacts(MigrationFileStatus status,
                                         List<MultiFileConversionResponse.TargetFileItem> artifacts) throws Exception {
+        GeneratedArtifactValidator.validate(new MultiFileConversionResponse(null, artifacts));
         List<String> generatedFiles = new ArrayList<>();
         status.getGeneratedArtifacts().clear();
 
@@ -297,9 +299,17 @@ public class AsyncMigrationRetryService {
     }
 
     private void saveFilesAndComplete(MigrationFileStatus status, String response) throws Exception {
+        String[] parts = response.split("```java");
+        if (parts.length > 1) {
+            for (int i = 1; i < parts.length; i++) {
+                GeneratedArtifactValidator.validateCode(status.getSourceFile(), "SOURCE",
+                        parts[i].split("```")[0].trim());
+            }
+        } else {
+            GeneratedArtifactValidator.validateCode(status.getSourceFile(), "SOURCE", response);
+        }
         List<String> generatedFiles = new ArrayList<>();
         status.getGeneratedArtifacts().clear();
-        String[] parts = response.split("```java");
         if (parts.length > 1) {
             String sourceCode = parts[1].split("```")[0].trim();
             String baseName = status.getSourceFile().replace(".java", "");

@@ -144,6 +144,9 @@ public class TargetArtifactRegistryService {
         target.setCompactSignature(extraction.compactSignature());
         target.setSemanticDescription(description);
         target.setUpdatedAt(now);
+        target.setLastProcessedAt(now);
+        target.setCompilationStatus("PENDING");
+        target.setLastCompilerErrors(null);
     }
 
     private void indexInVectorStore(GeneratedArtifact canonical, CompactSignatureExtractor.Extraction extraction,
@@ -185,6 +188,35 @@ public class TargetArtifactRegistryService {
 
     private String limit(List<String> names) {
         return names.stream().limit(MAX_NAMES_IN_DESCRIPTION).collect(Collectors.joining(", "));
+    }
+
+    public String findReferencedSignatures(String compilerErrors, Long excludedArtifactId) {
+        Map<String, ExistingArtifactMatch> matches = new LinkedHashMap<>();
+        for (GeneratedArtifact artifact : artifactRepository.findAll()) {
+            String fqcn = artifact.getFqcn();
+            if (artifact.getId().equals(excludedArtifactId) || fqcn == null || !isRegistrable(artifact)) {
+                continue;
+            }
+            String simpleName = fqcn.substring(fqcn.lastIndexOf('.') + 1);
+            if (Pattern.compile("(?<![\\w$])" + Pattern.quote(simpleName) + "(?![\\w$])")
+                    .matcher(compilerErrors).find()) {
+                if (artifact.getCompactSignature() != null && !artifact.getCompactSignature().isBlank()) {
+                    matches.putIfAbsent(fqcn, new ExistingArtifactMatch(fqcn, artifact.getArtifactType(),
+                            "Compilation", artifact.getSqlTableName(), artifact.getCompactSignature()));
+                }
+            }
+        }
+        return applyBudget(sortByPriority(matches), prompts.getConversion().getRegistry().getMaxContextChars())
+                .stream().map(ExistingArtifactMatch::render).collect(Collectors.joining("\n"));
+    }
+
+    public void refreshCompilationMetadata(GeneratedArtifact artifact) {
+        CompactSignatureExtractor.Extraction extraction = extractor.extract(
+                artifact.getGeneratedCode(), artifact.getArtifactType(), artifact.getRelativeTargetPath());
+        artifact.setFqcn(extraction.fqcn());
+        artifact.setCompactSignature(extraction.compactSignature());
+        artifact.setSqlTableName(extraction.sqlTableName());
+        artifact.setUpdatedAt(LocalDateTime.now());
     }
 
     public List<ExistingArtifactMatch> findRelevantExistingArtifacts(MigrationFileStatus sourceFile, int topK,

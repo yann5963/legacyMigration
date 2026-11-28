@@ -58,7 +58,7 @@ public class MigrationFileStatus {
 
     private Integer layer;
 
-    @Column(length = 20000)
+    @Column(columnDefinition = "TEXT")
     private String lastCustomPrompt;
 
     private String sourceFile;
@@ -69,6 +69,7 @@ public class MigrationFileStatus {
     @Enumerated(EnumType.STRING)
     private MigrationStatus status;
 
+    @Column(columnDefinition = "TEXT")
     private String errorMessage;
 
     @Column(length = 100)

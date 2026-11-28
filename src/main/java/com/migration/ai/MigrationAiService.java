@@ -8,7 +8,7 @@ import com.migration.dto.FilePreAnalysisResult;
 import com.migration.dto.MultiFileConversionResponse;
 import com.migration.model.ProjectConfiguration;
 import com.migration.repository.ProjectConfigurationRepository;
-import lombok.RequiredArgsConstructor;
+import com.migration.parser.GeneratedArtifactValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.ChatClient;
 import org.springframework.ai.chat.messages.Message;
@@ -18,6 +18,7 @@ import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.chat.prompt.SystemPromptTemplate;
 import org.springframework.ai.ollama.api.OllamaOptions;
 import org.springframework.ai.parser.BeanOutputParser;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -38,6 +39,7 @@ public class MigrationAiService {
         this(chatClient, projectConfigRepository, new MigrationPromptsProperties());
     }
 
+    @Autowired
     public MigrationAiService(ChatClient chatClient, ProjectConfigurationRepository projectConfigRepository,
                               MigrationPromptsProperties prompts) {
         this.chatClient = chatClient;
@@ -219,15 +221,28 @@ public class MigrationAiService {
         Prompt prompt = new Prompt(List.of(systemMessage, userMessage), options);
         String rawResponse = chatClient.call(prompt).getResult().getOutput().getContent();
 
+        MultiFileConversionResponse parsedResponse = null;
         try {
-            return outputParser.parse(extractJsonPayload(rawResponse));
+            parsedResponse = outputParser.parse(extractJsonPayload(rawResponse));
+            return GeneratedArtifactValidator.validate(parsedResponse);
         } catch (Exception firstError) {
-            log.debug("Premier parsing JSON multi-fichiers échoué, tentative de reformattage JSON...");
-            UserMessage repairMessage = new UserMessage(prompts.render(prompts.getConversion().getRepair(),
-                    Map.of("rawResponse", rawResponse)));
-            Prompt repairPrompt = new Prompt(List.of(systemMessage, repairMessage), options);
+            log.warn("Reponse de conversion multi-fichiers rejetee, tentative de correction : {}",
+                    firstError.getMessage());
+            String validationPrefix = parsedResponse != null
+                    ? "Le JSON est valide mais le code Java genere est invalide ou incomplet.\n"
+                      + "Erreur de validation : " + firstError.getMessage() + "\n"
+                      + "Corrige impérativement le champ `code` concerné pour fournir un fichier Java 21 complet et syntaxiquement valide "
+                      + "(ex. `public class Nom { ... }` ou `public record Nom(...) { ... }`, sans omettre `class` ni `(...)` sur un `record`).\n\n"
+                    : "";
+            String repairBody = prompts.render(prompts.getConversion().getRepair(),
+                    Map.of("rawResponse", rawResponse == null ? "" : rawResponse));
+            String validationSuffix = parsedResponse == null
+                    ? "\n\nErreur de validation : " + firstError.getMessage()
+                    : "";
+            UserMessage repairMessage = new UserMessage(validationPrefix + repairBody + validationSuffix);
+            Prompt repairPrompt = new Prompt(List.of(systemMessage, userMessage, repairMessage), options);
             String repairedResponse = chatClient.call(repairPrompt).getResult().getOutput().getContent();
-            return outputParser.parse(extractJsonPayload(repairedResponse));
+            return GeneratedArtifactValidator.validate(outputParser.parse(extractJsonPayload(repairedResponse)));
         }
     }
 

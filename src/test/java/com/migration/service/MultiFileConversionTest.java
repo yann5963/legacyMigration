@@ -4,6 +4,7 @@ import com.migration.ai.MigrationAiService;
 import com.migration.dto.MultiFileConversionResponse;
 import com.migration.model.MigrationFileStatus;
 import com.migration.model.MigrationStatus;
+import com.migration.model.GeneratedArtifact;
 import com.migration.parser.LegacyCodeParserService;
 import com.migration.repository.MigrationFileStatusRepository;
 import org.junit.jupiter.api.Test;
@@ -23,6 +24,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -47,6 +49,36 @@ class MultiFileConversionTest {
 
     @TempDir
     Path tempDir;
+
+    @Test
+    void incompleteGeneratedCodeDoesNotReplacePreviousArtifactsOrWriteAPartialBatch() throws Exception {
+        ReflectionTestUtils.setField(retryService, "outputDir", tempDir.toString());
+        Path sourceFile = tempDir.resolve("Erreur.java");
+        Files.writeString(sourceFile, "public class Erreur {}");
+        Path previousFile = tempDir.resolve("src/main/java/Previous.java");
+        Files.createDirectories(previousFile.getParent());
+        Files.writeString(previousFile, "public class Previous { public int value() { return 7; } }");
+        var previous = GeneratedArtifact.builder().relativeTargetPath("src/main/java/Previous.java")
+                .artifactType("SERVICE").generatedCode(Files.readString(previousFile)).build();
+        var status = MigrationFileStatus.builder().id(42L).sourceFile("Erreur.java")
+                .absolutePath(sourceFile.toString()).status(MigrationStatus.NEEDS_REVIEW)
+                .generatedArtifacts(new ArrayList<>(List.of(previous))).contextFiles(new ArrayList<>()).build();
+        when(repository.findById(42L)).thenReturn(Optional.of(status));
+        when(vectorStore.similaritySearch(any(org.springframework.ai.vectorstore.SearchRequest.class))).thenReturn(List.of());
+        when(aiService.convertToMultiFile(anyString(), anyString(), isNull())).thenReturn(
+                new MultiFileConversionResponse("Incomplete", List.of(
+                        new MultiFileConversionResponse.TargetFileItem("src/main/java/NewService.java", "SERVICE",
+                                "public class NewService {}"),
+                        new MultiFileConversionResponse.TargetFileItem("src/main/java/ErreurDTO.java", "DTO", "ErreurDTO"))));
+
+        retryService.convertFile(42L, "Preserve business logic", null, null);
+
+        assertEquals(MigrationStatus.ERROR, status.getStatus());
+        assertTrue(status.getErrorMessage().contains("fichier transforme complet"));
+        assertEquals(List.of(previous), status.getGeneratedArtifacts());
+        assertEquals(previous.getGeneratedCode(), Files.readString(previousFile));
+        assertFalse(Files.exists(tempDir.resolve("src/main/java/NewService.java")));
+    }
 
     @Test
     void convertFile_savesMultipleGeneratedArtifactsAndUpdatesStatus() throws Exception {

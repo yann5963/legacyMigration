@@ -116,6 +116,9 @@ public class DynamicRoutingService {
                 continue;
             }
             Path savedPath = saveSingleArtifact(artifact, status, projectRoot, basePackage);
+            artifact.setLastProcessedAt(java.time.LocalDateTime.now());
+            artifact.setCompilationStatus("PENDING");
+            artifact.setLastCompilerErrors(null);
             savedFiles.add(savedPath.toString());
         }
 

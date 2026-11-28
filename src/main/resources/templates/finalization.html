@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="fr" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Finalisation &amp; Compilation</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        pre { background-color: #f8f9fa; padding: 15px; border: 1px solid #dee2e6; border-radius: 5px; white-space: pre-wrap; }
+        .target-path { overflow-wrap: anywhere; }
+        .step-active { border-color: #0d6efd; background-color: #eef5ff; }
+    </style>
+</head>
+<body>
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="/dashboard">Migration Tool</a>
+        <ul class="navbar-nav me-auto flex-row gap-3">
+            <li class="nav-item"><a class="nav-link" href="/dashboard">Dashboard</a></li>
+            <li class="nav-item"><a class="nav-link active" aria-current="page" href="/finalization">Finalisation</a></li>
+            <li class="nav-item"><a class="nav-link" href="/configuration">Configuration</a></li>
+        </ul>
+    </div>
+</nav>
+<main class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4 gap-2">
+        <h1>Finalisation &amp; Compilation</h1>
+        <a href="/dashboard" class="btn btn-outline-secondary">Retour au Dashboard</a>
+    </div>
+    <div id="errorBanner" class="alert alert-danger d-none" role="alert"></div>
+    <div class="row g-3 mb-4">
+        <div class="col-md-3"><div class="card card-body"><span>Erreurs Maven</span><strong id="totalErrors" class="fs-3">—</strong></div></div>
+        <div class="col-md-3"><div class="card card-body"><span>Dernier build</span><strong id="buildStatus" class="fs-3">NON LANCÉ</strong><small id="buildDate"></small></div></div>
+        <div class="col-md-3"><div class="card card-body"><span>Fichiers compilés / total</span><strong id="compiledFiles" class="fs-3">—</strong></div></div>
+        <div class="col-md-3"><div class="card card-body"><span>Fichiers en erreur</span><strong id="filesInError" class="fs-3">—</strong></div></div>
+    </div>
+    <div class="row g-3 mb-3">
+        <div class="col-lg-4"><div id="step-PREPARE" class="card card-body h-100">
+            <button type="button" class="btn btn-primary operation-button" data-operation="prepare">1. Préparer le terrain</button>
+            <small class="mt-2 text-muted">Squelette Spring Boot 3 / Java 21, imports et packages. Sans appel IA. Les artefacts sont écrits dans le projet cible configuré.</small>
+        </div></div>
+        <div class="col-lg-4"><div id="step-BUILD" class="card card-body h-100">
+            <button type="button" class="btn btn-primary operation-button" data-operation="build">2. Lancer le Build Maven</button>
+            <small class="mt-2 text-muted">mvn test-compile -B : diagnostic et regroupement par fichier.</small>
+        </div></div>
+        <div class="col-lg-4"><div id="step-AUTO" class="card card-body h-100">
+            <button type="button" class="btn btn-success operation-button" data-operation="auto-fix">3. Corriger par saut de puce (Auto)</button>
+            <label for="maxIterations" class="form-label small mt-2">Maximum de sauts globaux (1 à 50)</label>
+            <input id="maxIterations" class="form-control form-control-sm" type="number" min="1" max="50" value="10">
+            <small class="mt-2 text-muted">ENTITY / DTO → REPOSITORY → SERVICE → CONTROLLER. Deux tentatives IA au maximum par fichier en mode automatique ; relances manuelles possibles ensuite.</small>
+        </div></div>
+    </div>
+    <div class="alert alert-info" role="status" aria-live="polite">
+        <span id="jobSpinner" class="spinner-border spinner-border-sm me-2 d-none" aria-hidden="true"></span>
+        <span id="jobMessage">Chargement…</span>
+        <div id="jobProgress" class="progress mt-2 d-none" style="height: 8px;">
+            <div class="progress-bar progress-bar-striped progress-bar-animated w-100" role="progressbar" aria-label="Opération de finalisation en cours"></div>
+        </div>
+    </div>
+    <details class="mb-3"><summary>Diagnostic du dernier build</summary><pre id="buildDiagnostic" class="mt-2">Aucun build.</pre></details>
+    <div class="table-responsive">
+        <table class="table table-bordered table-striped align-middle">
+            <thead class="table-dark"><tr>
+                <th scope="col">Type</th><th scope="col">Chemin cible</th><th scope="col">Statut de compilation</th>
+                <th scope="col">Dernier traitement</th><th scope="col">Erreurs / Tentatives</th><th scope="col">Actions</th>
+            </tr></thead>
+            <tbody id="artifactRows"></tbody>
+        </table>
+    </div>
+</main>
+<div class="modal fade" id="fixModal" tabindex="-1" aria-labelledby="fixModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl"><div class="modal-content">
+        <div class="modal-header">
+            <h2 class="modal-title fs-5" id="fixModalLabel">Corriger / Améliorer le prompt</h2>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fermer"></button>
+        </div>
+        <div class="modal-body">
+            <p id="fixPath" class="font-monospace target-path"></p>
+            <h3 class="fs-6">Erreurs Maven exactes</h3><pre id="fixErrors"></pre>
+            <div class="mb-3">
+                <label for="fixModel" class="form-label">Modèle LLM pour cette action</label>
+                <select id="fixModel" class="form-select"><option value="">(Modèle par défaut)</option></select>
+            </div>
+            <label for="fixPrompt" class="form-label">Prompt de correction (modifiable)</label>
+            <textarea id="fixPrompt" class="form-control font-monospace" rows="16" maxlength="36000"></textarea>
+            <small class="text-muted">Ne collez pas de log Maven complet. Conservez les extraits locaux et le format de patch JSON attendu. Le garde-fou AST refuse toute suppression de méthode.</small>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+            <button type="button" class="btn btn-primary" id="submitFix">Relancer ce fichier</button>
+        </div>
+    </div></div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    const api = '/api/migration/finalization';
+    const byId = id => document.getElementById(id);
+    const fixModal = new bootstrap.Modal(byId('fixModal'));
+    let activeArtifact = null;
+    let running = false;
+    let submitting = false;
+    let loadingPrompt = false;
+    let files = [];
+    let timer;
+
+    async function request(url, options = {}) {
+        const response = await fetch(url, options);
+        const content = await response.text();
+        let body;
+        try { body = content ? JSON.parse(content) : {}; }
+        catch (error) { throw new Error('Réponse serveur invalide (HTTP ' + response.status + ').'); }
+        if (!response.ok) throw new Error(body.error || body.message || 'Erreur HTTP ' + response.status);
+        return body;
+    }
+
+    function showError(message) {
+        byId('errorBanner').textContent = message;
+        byId('errorBanner').classList.remove('d-none');
+    }
+
+    function formatDate(value) {
+        if (!value) return '—';
+        const date = new Date(value);
+        const pad = number => String(number).padStart(2, '0');
+        return pad(date.getDate()) + '/' + pad(date.getMonth() + 1) + '/' + date.getFullYear() + ' '
+            + pad(date.getHours()) + ':' + pad(date.getMinutes()) + ':' + pad(date.getSeconds());
+    }
+
+    function updateButtons() {
+        const busy = running || submitting;
+        document.querySelectorAll('.operation-button, .fix-button').forEach(button => {
+            button.disabled = busy || button.dataset.unavailable === 'true'
+                || (button.classList.contains('fix-button') && loadingPrompt);
+        });
+        byId('maxIterations').disabled = busy;
+        byId('submitFix').disabled = busy || activeArtifact === null;
+    }
+
+    function renderFiles() {
+        const rows = byId('artifactRows');
+        rows.replaceChildren();
+        if (!files.length) {
+            const cell = document.createElement('td');
+            cell.colSpan = 6;
+            cell.textContent = 'Aucun artefact généré. Convertissez les fichiers depuis le Dashboard.';
+            const row = rows.insertRow();
+            row.appendChild(cell);
+        }
+        const colors = {
+            PENDING: 'bg-secondary', PREPARED: 'bg-primary', COMPILING_OK: 'bg-success',
+            COMPILATION_ERROR: 'bg-danger', FIXED_BY_AI: 'bg-info text-dark', NEEDS_MANUAL_REVIEW: 'bg-warning text-dark'
+        };
+        files.forEach(file => {
+            const row = rows.insertRow();
+            row.insertCell().textContent = file.artifactType || 'OTHER';
+            const path = row.insertCell();
+            path.textContent = file.relativeTargetPath;
+            path.className = 'font-monospace target-path';
+            const badge = document.createElement('span');
+            badge.className = 'badge ' + (colors[file.compilationStatus] || 'bg-secondary');
+            badge.textContent = file.compilationStatus;
+            row.insertCell().appendChild(badge);
+            row.insertCell().textContent = formatDate(file.lastProcessedAt);
+            row.insertCell().textContent = file.errorsCount + ' / ' + file.fixAttemptsCount;
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'btn btn-sm btn-outline-primary fix-button';
+            button.textContent = 'Corriger / Améliorer le prompt';
+            button.dataset.unavailable = String(file.locked || !file.errorsCount || !file.relativeTargetPath.endsWith('.java'));
+            if (file.locked) button.title = 'Artefact verrouillé';
+            button.addEventListener('click', () => openFix(file));
+            row.insertCell().appendChild(button);
+        });
+        updateButtons();
+    }
+
+    async function refresh() {
+        const [summary, job] = await Promise.all([request(api), request(api + '/status')]);
+        running = job.running;
+        files = summary.files;
+        byId('totalErrors').textContent = summary.totalErrors;
+        byId('buildStatus').textContent = summary.buildSuccess === null ? 'NON LANCÉ' : summary.buildSuccess ? 'SUCCESS' : 'FAILED';
+        byId('buildStatus').className = 'fs-3 ' + (summary.buildSuccess === null ? 'text-muted' : summary.buildSuccess ? 'text-success' : 'text-danger');
+        byId('buildDate').textContent = formatDate(summary.builtAt);
+        byId('compiledFiles').textContent = summary.compiledFilesCount + ' / ' + files.length;
+        byId('filesInError').textContent = summary.filesInErrorCount;
+        byId('buildDiagnostic').textContent = summary.diagnostic || 'Aucun build.';
+        byId('jobMessage').textContent = job.message || 'Prêt. Les trois étapes peuvent être déclenchées indépendamment.';
+        byId('jobSpinner').classList.toggle('d-none', !running);
+        byId('jobProgress').classList.toggle('d-none', !running);
+        ['PREPARE', 'BUILD', 'AUTO'].forEach(step => byId('step-' + step).classList.toggle('step-active', running && job.operation === step));
+        if (job.error) showError(job.error);
+        renderFiles();
+    }
+
+    async function poll() {
+        try { await refresh(); }
+        catch (error) { showError(error.message); }
+        finally { timer = setTimeout(poll, 2000); }
+    }
+
+    async function startOperation(operation, body) {
+        if (running || submitting) return;
+        let suffix = operation;
+        if (operation === 'auto-fix') {
+            const max = Number(byId('maxIterations').value);
+            if (!Number.isInteger(max) || max < 1 || max > 50) {
+                showError('Le nombre de sauts doit être compris entre 1 et 50.');
+                return;
+            }
+            suffix += '?maxIterations=' + max;
+        }
+        submitting = true;
+        updateButtons();
+        byId('errorBanner').classList.add('d-none');
+        try {
+            await request(api + '/' + suffix, {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: body === undefined ? undefined : JSON.stringify(body)
+            });
+            running = true;
+            if (operation.startsWith('artifacts/')) fixModal.hide();
+            await refresh();
+        } catch (error) { showError(error.message); }
+        finally { submitting = false; updateButtons(); }
+    }
+
+    async function openFix(file) {
+        if (loadingPrompt || running || submitting) return;
+        loadingPrompt = true;
+        activeArtifact = null;
+        updateButtons();
+        try {
+            const preview = await request(api + '/artifacts/' + file.id + '/fix-prompt');
+            activeArtifact = file.id;
+            byId('fixPath').textContent = file.relativeTargetPath;
+            byId('fixErrors').textContent = preview.compilerErrors;
+            byId('fixPrompt').value = preview.prompt;
+            fixModal.show();
+        } catch (error) { showError(error.message); }
+        finally { loadingPrompt = false; updateButtons(); }
+    }
+
+    document.querySelectorAll('[data-operation]').forEach(button =>
+        button.addEventListener('click', () => startOperation(button.dataset.operation)));
+    byId('submitFix').addEventListener('click', () => {
+        if (activeArtifact === null || !byId('fixPrompt').value.trim()) return;
+        startOperation('artifacts/' + activeArtifact + '/fix', {
+            customPrompt: byId('fixPrompt').value, modelOverride: byId('fixModel').value || null
+        });
+    });
+    request('/api/configuration/models').then(models => {
+        models.forEach(model => byId('fixModel').add(new Option(model, model)));
+    }).catch(error => showError('Chargement des modèles impossible : ' + error.message));
+    window.addEventListener('pagehide', () => clearTimeout(timer));
+    poll();
+</script>
+</body>
+</html>

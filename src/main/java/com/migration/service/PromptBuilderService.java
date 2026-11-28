@@ -4,8 +4,8 @@ import com.migration.model.ContextMode;
 import com.migration.model.ContextReference;
 import com.migration.parser.LegacyCodeParserService;
 import com.migration.config.MigrationPromptsProperties;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.nio.file.Files;
@@ -28,6 +28,7 @@ public class PromptBuilderService {
         this(parserService, new MigrationPromptsProperties());
     }
 
+    @Autowired
     public PromptBuilderService(LegacyCodeParserService parserService, MigrationPromptsProperties prompts) {
         this.parserService = parserService;
         this.prompts = prompts == null ? new MigrationPromptsProperties() : prompts;

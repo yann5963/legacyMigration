@@ -10,6 +10,7 @@ import jakarta.persistence.Index;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -62,6 +63,30 @@ public class GeneratedArtifact {
     private Boolean locked;
 
     private LocalDateTime updatedAt;
+
+    private LocalDateTime lastProcessedAt;
+
+    @Builder.Default
+    private String compilationStatus = "PENDING";
+
+    @Column(columnDefinition = "TEXT")
+    private String lastCompilerErrors;
+
+    @Column(nullable = false, columnDefinition = "integer default 0")
+    private int fixAttemptsCount;
+
+    @Column(columnDefinition = "TEXT")
+    private String lastUsedFixPrompt;
+
+    @PrePersist
+    void initializeProcessing() {
+        if (lastProcessedAt == null) {
+            lastProcessedAt = LocalDateTime.now();
+        }
+        if (compilationStatus == null) {
+            compilationStatus = "PENDING";
+        }
+    }
 
     @Column(name = "migration_file_status_id", insertable = false, updatable = false)
     private Long sourceStatusId;

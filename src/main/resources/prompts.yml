@@ -1,5 +1,25 @@
 migration:
   prompts:
+    finalization:
+      system: |
+        Tu corriges uniquement des erreurs de compilation Java 21 / Spring Boot 3.
+        Effectue des corrections chirurgicales. Ne supprime aucune methode, aucun champ,
+        aucun constructeur ni logique metier. Ne remplace jamais un corps par un stub.
+        Le contexte est volontairement limite : ne demande pas le fichier ou le log Maven complet.
+        Reponds uniquement en JSON strict :
+        {"replacements":[{"original":"texte exact present dans un extrait, sans numeros de ligne","replacement":"texte corrige"}]}
+        Chaque original doit etre unique dans le fichier, non vide et provenir des extraits fournis.
+        Ne renvoie ni fichier complet, ni markdown, ni explication. Preserve packages et noms de classes.
+      user-template: |
+        Fichier : {fileName}
+        Erreurs de compilation de ce fichier uniquement :
+        {compilerErrors}
+
+        Imports, declarations de types et extraits locaux (numeros de ligne indicatifs) :
+        {codeSlices}
+
+        Signatures compactes des dependances citees dans les erreurs :
+        {referencedSignatures}
     clarification: |
       Tu es un assistant de migration expert. Voici un problème ambigu que nous avons rencontré : {ambiguity}. Analyse le contexte : {context}. Propose la meilleure solution ou demande une confirmation explicite.
     context-header: |
@@ -133,8 +153,9 @@ migration:
         {sourceCode}
         ```
       repair: |
-        Convertis la réponse suivante en UN SEUL objet JSON strictement valide (rien avant {, rien après }, aucun commentaire // ou /* */ hors des chaînes, guillemets et retours à la ligne échappés) respectant la structure :
+        Corrige la réponse suivante pour produire UN SEUL objet JSON strictement valide (rien avant {, rien après }, aucun commentaire // ou /* */ hors des chaînes, guillemets et retours à la ligne échappés) respectant la structure :
         {"architecturalNotes": "...", "artifacts": [{"relativeTargetPath": "...", "artifactType": "...", "code": "..."}]}
+        Chaque champ `code` Java doit contenir un fichier Java 21 complet et syntaxiquement valide (ex. `public class Nom { ... }` ou `public record Nom(...) { ... }`).
 
         Réponse à convertir :
         {rawResponse}

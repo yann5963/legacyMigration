@@ -10,6 +10,11 @@ import org.springframework.web.bind.annotation.GetMapping;
 @Controller
 public class DashboardUiController {
 
+    @GetMapping("/finalization")
+    public String finalization() {
+        return "finalization";
+    }
+
     /**
      * Affiche la vue du tableau de bord.
      * @return

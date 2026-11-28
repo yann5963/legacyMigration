@@ -17,6 +17,10 @@ import lombok.NoArgsConstructor;
 import lombok.ToString;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
+/**
+ * Statut d'un chunk de fichier lors du processus de migration.
+ * FileChunkStatus
+ */
 @Entity
 @Data
 @Builder

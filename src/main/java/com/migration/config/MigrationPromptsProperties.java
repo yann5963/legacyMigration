@@ -15,6 +15,19 @@ public class MigrationPromptsProperties {
 
     private PreAnalysis preAnalysis = new PreAnalysis();
     private Conversion conversion = new Conversion();
+    private Finalization finalization = new Finalization();
+
+    public Finalization getFinalization() { return finalization; }
+    public void setFinalization(Finalization finalization) { this.finalization = finalization; }
+
+    public static class Finalization {
+        private String system = "";
+        private String userTemplate = "";
+        public String getSystem() { return system; }
+        public void setSystem(String system) { this.system = system; }
+        public String getUserTemplate() { return userTemplate; }
+        public void setUserTemplate(String userTemplate) { this.userTemplate = userTemplate; }
+    }
     private String clarification = "";
     private String contextHeader = "";
     private String ragHeader = "";

@@ -47,6 +47,17 @@ public class ConfigurationController {
     @PostMapping
     public ResponseEntity<ProjectConfiguration> updateConfiguration(@RequestBody ProjectConfiguration config) {
         config.setId(1L); // Ensure we only have one configuration record
+        config.setLastBuildSuccess(null);
+        config.setLastBuildAt(null);
+        config.setLastBuildErrors(0);
+        config.setLastBuildDiagnostic(null);
+        repository.findById(1L).filter(existing -> java.util.Objects.equals(
+                existing.getTargetProjectPath(), config.getTargetProjectPath())).ifPresent(existing -> {
+            config.setLastBuildSuccess(existing.getLastBuildSuccess());
+            config.setLastBuildAt(existing.getLastBuildAt());
+            config.setLastBuildErrors(existing.getLastBuildErrors());
+            config.setLastBuildDiagnostic(existing.getLastBuildDiagnostic());
+        });
         ProjectConfiguration savedConfig = repository.save(config);
         return ResponseEntity.ok(savedConfig);
     }
